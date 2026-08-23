@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Real-Time Aerial Sync</title>
+    <title>Tabletop Footie - Instant Response</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -238,7 +238,6 @@
             }, 1000);
         });
 
-        // Real-Time Frame Interpolation for both Ground & Aerial Arcs
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted && !isReplayMode) {
                 ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
@@ -507,7 +506,7 @@
             };
         }
 
-        function createSubbuteoFigure(teamColorHex, ringColorHex) {
+        function createSubbuteoFigure(teamColorHex) {
             const group = new THREE.Group();
             const baseGeo = new THREE.CylinderGeometry(1.0, 0.8, 0.35, 24);
             const baseMat = new THREE.MeshStandardMaterial({ color: teamColorHex, roughness: 0.3, metalness: 0.1 });
@@ -521,30 +520,23 @@
             figure.position.y = 1.0;
             group.add(figure);
 
-            const ringGeo = new THREE.RingGeometry(1.05, 1.25, 24).rotateX(-Math.PI/2);
-            const ringMat = new THREE.MeshBasicMaterial({ color: ringColorHex, side: THREE.DoubleSide });
-            const ring = new THREE.Mesh(ringGeo, ringMat);
-            ring.position.y = 0.04; ring.visible = true;
-            group.add(ring);
-
-            return { group: group, ring: ring, baseMat: baseMat, figureMat: figureMat };
+            return { group: group, baseMat: baseMat, figureMat: figureMat };
         }
 
         function createTeams() {
             const posBlue = [{x: 0, z: 26}, {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}];
             const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
 
-            posBlue.forEach(p => spawnPlayer(p, 'BLUE', COLOR_BLUE_NORMAL, 0x00aaff));
-            posRed.forEach(p => spawnPlayer(p, 'RED', COLOR_RED_NORMAL, 0xff3333));
+            posBlue.forEach(p => spawnPlayer(p, 'BLUE', COLOR_BLUE_NORMAL));
+            posRed.forEach(p => spawnPlayer(p, 'RED', COLOR_RED_NORMAL));
         }
 
-        function spawnPlayer(pos, team, baseColor, ringColor) {
-            const figure = createSubbuteoFigure(baseColor, ringColor);
+        function spawnPlayer(pos, team, baseColor) {
+            const figure = createSubbuteoFigure(baseColor);
             figure.group.position.set(pos.x, 0, pos.z);
             scene.add(figure.group);
             players.push({
                 mesh: figure.group,
-                ring: figure.ring,
                 baseMat: figure.baseMat,
                 figureMat: figure.figureMat,
                 team: team,
@@ -1012,13 +1004,11 @@
                     const color = isActive ? COLOR_BLUE_ACTIVE : COLOR_BLUE_NORMAL;
                     p.baseMat.color.setHex(color);
                     p.figureMat.color.setHex(color);
-                    p.ring.visible = (!isPlayPaused && !isGameOver && !isReplayMode && (!isSetPieceActive || (p === setPieceTaker && setPieceTeam === 'BLUE') || (isSetPieceActive && setPieceTeam === 'BLUE' && !setPieceTaker)) && !isMoving);
                 } else {
                     const isActive = (selectedPlayer === p) || isMoving;
                     const color = isActive ? COLOR_RED_ACTIVE : COLOR_RED_NORMAL;
                     p.baseMat.color.setHex(color);
                     p.figureMat.color.setHex(color);
-                    p.ring.visible = (!isPlayPaused && !isGameOver && !isReplayMode && (!isSetPieceActive || (p === setPieceTaker && setPieceTeam === 'RED') || (isSetPieceActive && setPieceTeam === 'RED' && !setPieceTaker)) && !isMoving);
                 }
             });
         }
@@ -1231,7 +1221,6 @@
                             }
                         });
                     } else {
-                        // Smooth interpolation for both aerial flight and ground rolls
                         const lerpFactor = ball.isAerial ? 0.7 : 0.45;
                         ball.mesh.position.lerp(ball.targetPos, lerpFactor);
                         
