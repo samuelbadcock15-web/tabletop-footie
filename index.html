@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Mobile & PC</title>
+    <title>Tabletop Footie - Dynamic Action Cam</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -291,10 +291,7 @@
         });
 
         let scene, camera, renderer;
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let prevTime = performance.now();
-        const cameraVelocity = new THREE.Vector3();
-        const cameraDirection = new THREE.Vector3();
         const mousePointer = new THREE.Vector2(-10, -10);
         const raycaster = new THREE.Raycaster();
 
@@ -349,33 +346,40 @@
         const COLOR_RED_NORMAL = 0xdc2626;
         const COLOR_RED_ACTIVE = 0x6b0d0d;
 
-        function updateResponsiveCamera() {
+        // Dynamic Smooth Action Cam Tracker
+        const camCurrentPos = new THREE.Vector3();
+        const camCurrentLook = new THREE.Vector3();
+
+        function updateActionCamera(delta) {
+            if (isReplayMode) return;
+
             const aspect = window.innerWidth / window.innerHeight;
             camera.aspect = aspect;
 
+            const ballPos = ball ? ball.mesh.position : new THREE.Vector3(0, 0, 0);
+            const clampedBallZ = Math.max(-20, Math.min(20, ballPos.z));
+            const clampedBallX = Math.max(-10, Math.min(10, ballPos.x * 0.6));
+
+            let targetX = clampedBallX;
+            let targetY, targetZ;
+            let lookTarget = new THREE.Vector3(clampedBallX, 0.5, clampedBallZ);
+
             if (aspect < 1.0) {
-                // Mobile Portrait: Increase altitude and pull back so the entire pitch fits
-                const portraitAltitude = 58 + (1.0 - aspect) * 32;
-                const portraitDistance = 46 + (1.0 - aspect) * 20;
-                camera.fov = 54;
-                if (myTeam === 'RED') {
-                    camera.position.set(0, portraitAltitude, -portraitDistance);
-                    camera.lookAt(new THREE.Vector3(0, -2, -2));
-                } else {
-                    camera.position.set(0, portraitAltitude, portraitDistance);
-                    camera.lookAt(new THREE.Vector3(0, -2, 2));
-                }
+                // Mobile Portrait: Action Cam zooms in closer and tracks smoothly
+                targetY = 44.0;
+                targetZ = (myTeam === 'RED') ? (clampedBallZ - 28.0) : (clampedBallZ + 28.0);
             } else {
-                // Desktop Landscape
-                camera.fov = 42;
-                if (myTeam === 'RED') {
-                    camera.position.set(0, 56, -44);
-                    camera.lookAt(new THREE.Vector3(0, -2, -2));
-                } else {
-                    camera.position.set(0, 56, 44);
-                    camera.lookAt(new THREE.Vector3(0, -2, 2));
-                }
+                // Desktop Landscape: Classic elevated pitch view with subtle ball follow
+                targetY = 52.0;
+                targetZ = (myTeam === 'RED') ? (clampedBallZ * 0.3 - 42.0) : (clampedBallZ * 0.3 + 42.0);
             }
+
+            const targetPos = new THREE.Vector3(targetX, targetY, targetZ);
+            
+            // Smooth Camera Damping (lerp)
+            camera.position.lerp(targetPos, Math.min(1.0, delta * 4.5));
+            camCurrentLook.lerp(lookTarget, Math.min(1.0, delta * 4.5));
+            camera.lookAt(camCurrentLook);
             camera.updateProjectionMatrix();
         }
 
@@ -393,8 +397,9 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0f172a);
 
-            camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
-            updateResponsiveCamera();
+            camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 48, myTeam === 'RED' ? -34 : 34);
+            camCurrentLook.set(0, 0, 0);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -422,9 +427,6 @@
             window.addEventListener('pointermove', onPointerMove, { passive: false });
             window.addEventListener('pointerup', onPointerUp, { passive: false });
             window.addEventListener('pointercancel', onPointerUp, { passive: false });
-
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
             canvasContainerElem.addEventListener('contextmenu', e => e.preventDefault());
 
             animate();
@@ -551,9 +553,9 @@
 
         function createArrowIndicator() {
             impactArrowGroup = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.2, roughness: 0.3 });
-            arrowShaftMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.0, 12).rotateX(Math.PI/2), mat);
-            arrowTipMesh = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.9, 12).rotateX(Math.PI/2), mat);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.3, roughness: 0.2 });
+            arrowShaftMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.0, 12).rotateX(Math.PI/2), mat);
+            arrowTipMesh = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.1, 12).rotateX(Math.PI/2), mat);
             impactArrowGroup.add(arrowShaftMesh, arrowTipMesh);
             impactArrowGroup.visible = false;
             scene.add(impactArrowGroup);
@@ -569,7 +571,7 @@
         }
 
         function updateArrowVisuals(length) {
-            const tipLen = 0.9;
+            const tipLen = 1.1;
             const shaftLen = Math.max(0.1, length - tipLen);
             arrowShaftMesh.scale.set(1, shaftLen, 1);
             arrowShaftMesh.position.set(0, 0, shaftLen / 2);
@@ -613,6 +615,7 @@
             );
         }
 
+        // --- Intuitive Mobile Slingshot Aim (Pull-Back or Push-Forward) ---
         function onPointerDown(event) {
             if (isPlayPaused || isGameOver || isReplayMode || !isGameStarted) return;
             event.preventDefault();
@@ -627,7 +630,6 @@
                 const hitPlayer = players.find(p => p.mesh === obj);
 
                 if (hitPlayer && hitPlayer.team === myTeam) {
-                    // Fix: If setPieceTaker is not assigned yet (e.g. Goal Kick), assign this player as taker
                     if (isSetPieceActive) {
                         if (setPieceTeam !== myTeam) return;
                         if (!setPieceTaker) setPieceTaker = hitPlayer;
@@ -670,17 +672,25 @@
                     const distance = dragVector.length();
 
                     if (distance > 0.3) {
-                        aimDirection.copy(dragVector).normalize();
+                        // Slingshot Detection: If user pulls backward towards self, shoot forward so fingers don't block the screen!
+                        const isPullingBack = (myTeam === 'BLUE' && dragVector.z > 0) || (myTeam === 'RED' && dragVector.z < 0);
+                        
+                        if (isPullingBack) {
+                            aimDirection.copy(dragVector).negate().normalize();
+                        } else {
+                            aimDirection.copy(dragVector).normalize();
+                        }
+
                         const clampedDist = Math.min(distance, maxDragDistance);
                         chargePower = (clampedDist / maxDragDistance) * 100;
                         powerBarFill.style.width = chargePower + '%';
 
                         impactArrowGroup.visible = true;
-                        impactArrowGroup.position.copy(selectedPlayer.mesh.position).y += (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.25);
-                        const lookTarget = selectedPlayer.mesh.position.clone().add(aimDirection).add(new THREE.Vector3(0, (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.25), 0));
+                        impactArrowGroup.position.copy(selectedPlayer.mesh.position).y += (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.3);
+                        const lookTarget = selectedPlayer.mesh.position.clone().add(aimDirection).add(new THREE.Vector3(0, (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.3), 0));
                         impactArrowGroup.lookAt(lookTarget);
 
-                        const visualLength = Math.max(1.2, clampedDist * 0.9);
+                        const visualLength = Math.max(1.3, clampedDist * 1.1);
                         updateArrowVisuals(visualLength);
                     } else {
                         chargePower = 0;
@@ -705,9 +715,15 @@
                 let finalPower = (Math.min(dragDist, maxDragDistance) / maxDragDistance) * 70 + Math.min(30, flickSpeed * 1.2);
                 finalPower = Math.min(100, Math.max(0, finalPower));
 
-                if (dragDist > 0.4 && finalPower > 4 && !isGameOver && !isReplayMode) {
+                if (dragDist > 0.35 && finalPower > 4 && !isGameOver && !isReplayMode) {
                     const pIndex = players.indexOf(selectedPlayer);
-                    aimDirection.copy(dragVector).normalize();
+                    
+                    const isPullingBack = (myTeam === 'BLUE' && dragVector.z > 0) || (myTeam === 'RED' && dragVector.z < 0);
+                    if (isPullingBack) {
+                        aimDirection.copy(dragVector).negate().normalize();
+                    } else {
+                        aimDirection.copy(dragVector).normalize();
+                    }
 
                     if (isSetPieceActive && (selectedPlayer === setPieceTaker || setPieceType === 'GOAL_KICK')) {
                         if (isAuthoritativeHost) {
@@ -1034,34 +1050,9 @@
             setTimeout(() => { if (!isGameOver) isPlayPaused = false; }, 1200);
         }
 
-        function onKeyDown(e) {
-            if (myTeam === 'RED') {
-                if (e.code === 'KeyW' || e.code === 'ArrowUp') moveBackward = true;
-                if (e.code === 'KeyS' || e.code === 'ArrowDown') moveForward = true;
-                if (e.code === 'KeyD' || e.code === 'ArrowRight') moveLeft = true;
-                if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveRight = true;
-            } else {
-                if (e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = true;
-                if (e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = true;
-                if (e.code === 'KeyD' || e.code === 'ArrowRight') moveLeft = true;
-                if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveRight = true;
-            }
-        }
-        function onKeyUp(e) {
-            if (myTeam === 'RED') {
-                if (e.code === 'KeyW' || e.code === 'ArrowUp') moveBackward = false;
-                if (e.code === 'KeyS' || e.code === 'ArrowDown') moveForward = false;
-                if (e.code === 'KeyD' || e.code === 'ArrowRight') moveLeft = false;
-                if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveRight = false;
-            } else {
-                if (e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = false;
-                if (e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = false;
-                if (e.code === 'KeyD' || e.code === 'ArrowRight') moveLeft = false;
-                if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveRight = false;
-            }
-        }
         function onWindowResize() {
-            updateResponsiveCamera();
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
@@ -1194,17 +1185,9 @@
             const delta = Math.min((time - prevTime) / 1000, 0.1);
 
             if (!isReplayMode) {
-                cameraVelocity.x -= cameraVelocity.x * 10.0 * delta;
-                cameraVelocity.z -= cameraVelocity.z * 10.0 * delta;
-                cameraDirection.z = Number(moveForward) - Number(moveBackward);
-                cameraDirection.x = Number(moveRight) - Number(moveLeft);
-                cameraDirection.normalize();
-                if (moveForward || moveBackward) cameraVelocity.z -= cameraDirection.z * 120.0 * delta;
-                if (moveLeft || moveRight) cameraVelocity.x -= cameraDirection.x * 120.0 * delta;
-                camera.position.x += cameraVelocity.x * delta;
-                camera.position.z += cameraVelocity.z * delta;
-
                 if (isGameStarted) {
+                    updateActionCamera(delta);
+
                     if (isAuthoritativeHost) {
                         updateMatchTimer(delta);
                         updatePhysics(delta);
