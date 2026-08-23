@@ -3,66 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tabletop Footie - 3D Multiplayer Subbuteo</title>
+    <title>Tabletop Footie - 3D Online Subbuteo</title>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #090d16; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #080c14; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; }
 
-        /* Lobby Overlay */
-        #lobby-overlay { position: absolute; inset: 0; background: rgba(9, 13, 22, 0.95); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
-        .lobby-card { background: #111827; border: 2px solid #00ffcc; border-radius: 20px; padding: 32px; width: 420px; max-width: 90vw; text-align: center; box-shadow: 0 0 35px rgba(0, 255, 204, 0.25); color: #fff; }
-        .lobby-title { font-size: 28px; font-weight: 900; color: #00ffcc; letter-spacing: 2px; margin-bottom: 6px; }
-        .lobby-sub { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
-        .lobby-btn { width: 100%; padding: 14px; margin: 8px 0; border-radius: 10px; font-size: 15px; font-weight: 800; border: none; cursor: pointer; transition: all 0.2s; }
-        .btn-create { background: #00ffcc; color: #000; }
-        .btn-create:hover { background: #33ffd6; transform: scale(1.02); }
-        .btn-solo { background: #3b82f6; color: #fff; }
-        .btn-solo:hover { background: #60a5fa; transform: scale(1.02); }
-        .join-box { display: flex; gap: 8px; margin-top: 14px; }
-        .join-input { flex: 1; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #fff; text-transform: uppercase; font-size: 15px; font-weight: bold; text-align: center; }
-        .join-input:focus { outline: none; border-color: #00ffcc; }
-        .btn-join { width: 110px; background: #10b981; color: #fff; }
-        .btn-join:hover { background: #34d399; }
-        #waiting-status { display: none; margin-top: 18px; padding: 14px; background: rgba(0, 255, 204, 0.1); border: 1px dashed #00ffcc; border-radius: 10px; font-size: 14px; }
+        /* Matchmaking HUD Overlay */
+        #matchmaking-overlay { position: absolute; inset: 0; background: rgba(8, 12, 20, 0.96); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); }
+        .queue-box { background: #0f172a; border: 2px solid #00ffcc; border-radius: 24px; padding: 40px 32px; width: 440px; max-width: 90vw; text-align: center; box-shadow: 0 0 40px rgba(0, 255, 204, 0.25); color: #fff; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+        .game-title { font-size: 32px; font-weight: 900; color: #00ffcc; letter-spacing: 3px; }
+        
+        .pulse-loader { width: 44px; height: 44px; border: 4px solid rgba(0, 255, 204, 0.2); border-top-color: #00ffcc; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 10px 0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* HUD */
+        #status-text { font-size: 16px; font-weight: 800; color: #e2e8f0; letter-spacing: 1.5px; text-transform: uppercase; }
+        #room-info-text { font-size: 20px; font-weight: 900; color: #ffff00; letter-spacing: 1px; display: none; }
+        
+        .ready-status-row { display: none; gap: 20px; font-size: 13px; font-weight: 800; margin: 8px 0; }
+        .ready-badge { padding: 4px 12px; border-radius: 12px; border: 1px solid #334155; }
+        .badge-blue { color: #38bdf8; border-color: #38bdf8; }
+        .badge-red { color: #f87171; border-color: #f87171; }
+        .is-ready { background: #10b981; color: #000 !important; border-color: #10b981 !important; }
+
+        #ready-btn { display: none; width: 100%; padding: 16px; border-radius: 12px; background: #00ffcc; color: #000; font-size: 18px; font-weight: 900; letter-spacing: 2px; border: none; cursor: pointer; transition: all 0.2s; box-shadow: 0 0 15px rgba(0,255,204,0.4); }
+        #ready-btn:hover { background: #33ffd6; transform: scale(1.02); }
+        #ready-btn:disabled { background: #334155; color: #94a3b8; cursor: default; transform: none; box-shadow: none; }
+
+        /* Match HUD */
         #scoreboard { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); background: rgba(10, 15, 20, 0.88); border: 2px solid #00ffcc; border-radius: 28px; padding: 8px 24px; color: #fff; display: flex; align-items: center; gap: 16px; font-weight: bold; font-size: 18px; z-index: 20; box-shadow: 0 4px 15px rgba(0, 255, 204, 0.2); }
         .score-blue { color: #3399ff; }
         .score-red { color: #ff4444; }
         #match-clock { color: #ffff00; font-family: monospace; font-size: 20px; min-width: 60px; text-align: center; }
-        #room-tag { position: absolute; top: 22px; right: 24px; color: #00ffcc; background: rgba(15, 23, 42, 0.9); border: 1px solid #00ffcc; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 800; z-index: 20; }
+        #active-room-tag { position: absolute; top: 22px; right: 24px; color: #00ffcc; background: rgba(15, 23, 42, 0.9); border: 1px solid #00ffcc; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 900; z-index: 20; }
 
         #power-bar-container { position: absolute; top: 70%; left: 50%; transform: translate(-50%, -50%); width: 220px; height: 14px; background: rgba(0, 0, 0, 0.6); border: 2px solid #ffffff; border-radius: 6px; display: none; z-index: 25; overflow: hidden; }
         #power-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #00ffcc 0%, #ffcc00 60%, #ff3300 100%); }
-        #announcement-banner { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 40px; font-weight: 900; color: #ffff00; text-shadow: 0 0 20px rgba(255,255,0,0.8); z-index: 60; display: none; text-transform: uppercase; text-align: center; }
+        #announcement-banner { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 42px; font-weight: 900; color: #ffff00; text-shadow: 0 0 20px rgba(255,255,0,0.8); z-index: 60; display: none; text-transform: uppercase; text-align: center; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
-    <div id="lobby-overlay">
-        <div class="lobby-card">
-            <div class="lobby-title">TABLETOP FOOTIE</div>
-            <div class="lobby-sub">3D Real-Time Subbuteo Simulator</div>
+    <!-- Matchmaking / Ready Overlay -->
+    <div id="matchmaking-overlay">
+        <div class="queue-box">
+            <div class="game-title">TABLETOP FOOTIE</div>
+            <div id="spinner" class="pulse-loader"></div>
+            <div id="status-text">CONNECTING TO MATCHMAKER...</div>
+            <div id="room-info-text">MATCH FOUND: ROOM 1</div>
             
-            <button class="lobby-btn btn-create" onclick="hostOnlineMatch()">CREATE ONLINE ROOM</button>
-            
-            <div class="join-box">
-                <input type="text" id="room-code-input" class="join-input" placeholder="ROOM CODE" maxlength="5">
-                <button class="lobby-btn btn-join" onclick="joinOnlineMatch()">JOIN</button>
+            <div class="ready-status-row" id="ready-status-row">
+                <span id="blue-ready-badge" class="ready-badge badge-blue">BLUE: WAITING</span>
+                <span id="red-ready-badge" class="ready-badge badge-red">RED: WAITING</span>
             </div>
 
-            <button class="lobby-btn btn-solo" onclick="startSoloMatch()">PLAY VS AI (SOLO)</button>
-
-            <div id="waiting-status">
-                Room Created! Code: <strong id="display-code" style="color: #00ffcc; font-size: 18px;"></strong><br>
-                <span style="color: #94a3b8; font-size: 12px;">Share this code with your friend to connect...</span>
-            </div>
+            <button id="ready-btn" onclick="sendReady()">READY UP</button>
         </div>
     </div>
 
-    <div id="room-tag">MODE: SOLO</div>
+    <div id="active-room-tag">ROOM: ...</div>
     <div id="canvas-container"></div>
     
     <div id="scoreboard">
@@ -77,12 +77,104 @@
     <div id="announcement-banner">KICK OFF!</div>
 
     <script>
-        let socket = null;
-        let isOnline = false;
-        let currentRoomCode = null;
+        const socket = io();
+        let currentRoomName = null;
         let myTeam = 'BLUE';
         let isAuthoritativeHost = true;
+        let isGameStarted = false;
 
+        const statusText = document.getElementById('status-text');
+        const roomInfoText = document.getElementById('room-info-text');
+        const spinner = document.getElementById('spinner');
+        const readyBtn = document.getElementById('ready-btn');
+        const readyRow = document.getElementById('ready-status-row');
+        const blueBadge = document.getElementById('blue-ready-badge');
+        const redBadge = document.getElementById('red-ready-badge');
+
+        socket.on('connect', () => {
+            statusText.innerText = 'SEARCHING FOR OPPONENT...';
+            socket.emit('find_match');
+        });
+
+        socket.on('matchmaking_status', (msg) => {
+            statusText.innerText = msg;
+        });
+
+        socket.on('match_found', (data) => {
+            currentRoomName = data.roomName;
+            myTeam = data.team;
+            isAuthoritativeHost = (data.role === 'HOST');
+
+            spinner.style.display = 'none';
+            statusText.innerText = 'PLAYER FOUND!';
+            roomInfoText.innerText = `JOINING: ${currentRoomName.toUpperCase()} (${myTeam} TEAM)`;
+            roomInfoText.style.display = 'block';
+            
+            readyRow.style.display = 'flex';
+            readyBtn.style.display = 'block';
+            document.getElementById('active-room-tag').innerText = `${currentRoomName} | ${myTeam}`;
+        });
+
+        function sendReady() {
+            readyBtn.disabled = true;
+            readyBtn.innerText = 'WAITING FOR OPPONENT...';
+            socket.emit('player_ready', currentRoomName);
+        }
+
+        socket.on('ready_update', (data) => {
+            if (data.hostReady) {
+                blueBadge.innerText = 'BLUE: READY';
+                blueBadge.classList.add('is-ready');
+            }
+            if (data.guestReady) {
+                redBadge.innerText = 'RED: READY';
+                redBadge.classList.add('is-ready');
+            }
+        });
+
+        socket.on('start_countdown', () => {
+            let count = 3;
+            readyBtn.innerText = `STARTING IN ${count}...`;
+            const interval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    readyBtn.innerText = `STARTING IN ${count}...`;
+                } else {
+                    clearInterval(interval);
+                    document.getElementById('matchmaking-overlay').style.display = 'none';
+                    isGameStarted = true;
+                    initEngine();
+                    showBanner("KICK OFF!");
+                }
+            }, 1000);
+        });
+
+        socket.on('server_state_update', (state) => {
+            if (!isAuthoritativeHost && isGameStarted) {
+                ball.mesh.position.set(state.ball.x, state.ball.y, state.ball.z);
+                state.players.forEach((p, idx) => {
+                    if (players[idx]) players[idx].mesh.position.set(p.x, p.y, p.z);
+                });
+                playerScore = state.scores.blue;
+                aiScore = state.scores.red;
+                document.getElementById('player-score').innerText = playerScore;
+                document.getElementById('ai-score').innerText = aiScore;
+            }
+        });
+
+        socket.on('receive_player_action', (action) => {
+            const targetPlayer = players[action.playerIndex];
+            if (targetPlayer) {
+                targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
+            }
+        });
+
+        socket.on('opponent_disconnected', () => {
+            alert("Opponent left the match. Refreshing matchmaking...");
+            window.location.reload();
+        });
+
+        // --- 3D Scene & Game Engine ---
         let scene, camera, renderer;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let prevTime = performance.now();
@@ -98,104 +190,20 @@
         const players = [];
 
         let playerScore = 0, aiScore = 0;
-        let powerBarContainer, powerBarFill, banner, matchClockElem;
+        let powerBarContainer, powerBarFill, banner;
         let selectedPlayer = null, hoveredPlayer = null, isAiming = false;
         let chargePower = 0;
         const maxDragDistance = 14.0;
         let aimDirection = new THREE.Vector3();
         let impactArrowGroup, arrowShaftMesh, arrowTipMesh;
 
-        let isPlayPaused = false;
-        const COLOR_BLUE = 0x2563eb;
-        const COLOR_RED = 0xdc2626;
-
-        function connectSocket() {
-            if (!socket) {
-                socket = io();
-                setupSocketListeners();
-            }
-        }
-
-        function hostOnlineMatch() {
-            connectSocket();
-            socket.emit('create_room');
-        }
-
-        function joinOnlineMatch() {
-            const code = document.getElementById('room-code-input').value.trim();
-            if (code.length < 3) return alert("Please enter a valid room code.");
-            connectSocket();
-            socket.emit('join_room', code);
-        }
-
-        function startSoloMatch() {
-            isOnline = false;
-            myTeam = 'BLUE';
-            isAuthoritativeHost = true;
-            document.getElementById('lobby-overlay').style.display = 'none';
-            document.getElementById('room-tag').innerText = 'MODE: SOLO VS AI';
-            initEngine();
-        }
-
-        function setupSocketListeners() {
-            socket.on('room_created', (data) => {
-                currentRoomCode = data.roomCode;
-                myTeam = 'BLUE';
-                isAuthoritativeHost = true;
-                document.getElementById('waiting-status').style.display = 'block';
-                document.getElementById('display-code').innerText = currentRoomCode;
-            });
-
-            socket.on('room_joined', (data) => {
-                currentRoomCode = data.roomCode;
-                myTeam = 'RED';
-                isAuthoritativeHost = false;
-            });
-
-            socket.on('match_start', (data) => {
-                isOnline = true;
-                document.getElementById('lobby-overlay').style.display = 'none';
-                document.getElementById('room-tag').innerText = `ROOM: ${data.roomCode} (${myTeam})`;
-                initEngine();
-                showBanner("MATCH READY! KICK OFF");
-            });
-
-            socket.on('server_state_update', (state) => {
-                if (!isAuthoritativeHost) {
-                    ball.mesh.position.set(state.ball.x, state.ball.y, state.ball.z);
-                    state.players.forEach((p, idx) => {
-                        if (players[idx]) players[idx].mesh.position.set(p.x, p.y, p.z);
-                    });
-                    playerScore = state.scores.blue;
-                    aiScore = state.scores.red;
-                    document.getElementById('player-score').innerText = playerScore;
-                    document.getElementById('ai-score').innerText = aiScore;
-                }
-            });
-
-            socket.on('receive_player_action', (action) => {
-                const targetPlayer = players[action.playerIndex];
-                if (targetPlayer) {
-                    targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
-                }
-            });
-
-            socket.on('join_error', (msg) => alert(msg));
-            socket.on('opponent_disconnected', () => {
-                alert("Opponent disconnected.");
-                window.location.reload();
-            });
-        }
-
         function initEngine() {
-            if (scene) return;
             powerBarContainer = document.getElementById('power-bar-container');
             powerBarFill = document.getElementById('power-bar-fill');
             banner = document.getElementById('announcement-banner');
-            matchClockElem = document.getElementById('match-clock');
 
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0f1d);
+            scene.background = new THREE.Color(0x080c14);
 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 56, 44);
@@ -271,8 +279,8 @@
             const posBlue = [{x: 0, z: 26}, {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}];
             const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
 
-            posBlue.forEach(p => spawnPlayer(p, 'BLUE', COLOR_BLUE));
-            posRed.forEach(p => spawnPlayer(p, 'RED', COLOR_RED));
+            posBlue.forEach(p => spawnPlayer(p, 'BLUE', 0x2563eb));
+            posRed.forEach(p => spawnPlayer(p, 'RED', 0xdc2626));
         }
 
         function spawnPlayer(pos, team, color) {
@@ -304,7 +312,7 @@
         }
 
         function onMouseDown(event) {
-            if (event.button !== 0 || isPlayPaused) return;
+            if (event.button !== 0 || !isGameStarted) return;
             if (hoveredPlayer && hoveredPlayer.team === myTeam) {
                 selectedPlayer = hoveredPlayer;
                 isAiming = true;
@@ -327,7 +335,7 @@
                         selectedPlayer.velocity.copy(impulse);
                     } else {
                         socket.emit('player_action', {
-                            roomCode: currentRoomCode,
+                            roomName: currentRoomName,
                             action: { playerIndex: pIndex, impulse: { x: impulse.x, z: impulse.z } }
                         });
                     }
@@ -406,7 +414,6 @@
                 } else ent.velocity.set(0,0,0);
             });
 
-            // Player to Ball Collisions
             players.forEach(p => {
                 const d = p.mesh.position.distanceTo(ball.mesh.position);
                 const minD = p.radius + ball.radius;
@@ -421,7 +428,6 @@
                 }
             });
 
-            // Goal detection
             if (Math.abs(ball.mesh.position.z) >= endlineZ && Math.abs(ball.mesh.position.x) < goalWidth / 2) {
                 if (ball.mesh.position.z < 0) {
                     playerScore++;
@@ -463,18 +469,16 @@
             camera.position.x += cameraVelocity.x * delta;
             camera.position.z += cameraVelocity.z * delta;
 
-            if (isAuthoritativeHost) {
+            if (isAuthoritativeHost && isGameStarted) {
                 updatePhysics(delta);
-                if (isOnline && socket) {
-                    socket.emit('sync_state', {
-                        roomCode: currentRoomCode,
-                        state: {
-                            ball: { x: ball.mesh.position.x, y: ball.mesh.position.y, z: ball.mesh.position.z },
-                            players: players.map(p => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z })),
-                            scores: { blue: playerScore, red: aiScore }
-                        }
-                    });
-                }
+                socket.emit('sync_state', {
+                    roomName: currentRoomName,
+                    state: {
+                        ball: { x: ball.mesh.position.x, y: ball.mesh.position.y, z: ball.mesh.position.z },
+                        players: players.map(p => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z })),
+                        scores: { blue: playerScore, red: aiScore }
+                    }
+                });
             }
 
             renderer.render(scene, camera);
