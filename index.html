@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Direct Flick Action</title>
+    <title>Tabletop Footie - Real-Time Aerial Sync</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -238,6 +238,7 @@
             }, 1000);
         });
 
+        // Real-Time Frame Interpolation for both Ground & Aerial Arcs
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted && !isReplayMode) {
                 ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
@@ -282,6 +283,13 @@
                 if (targetPlayer) {
                     targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
                 }
+            }
+        });
+
+        socket.on('receive_set_piece_event', (payload) => {
+            showBanner(payload.bannerText, 1300);
+            if (payload.logAction) {
+                logMatchAction(payload.logAction.type, payload.logAction.label, payload.logAction.badgeClass, payload.logAction.category, payload.logAction.spotX, payload.logAction.spotZ);
             }
         });
 
@@ -610,7 +618,6 @@
             );
         }
 
-        // Direct Push/Flick Mechanics (Drag Forward to Shoot Forward)
         function onPointerDown(event) {
             if (isPlayPaused || isGameOver || isReplayMode || !isGameStarted) return;
             event.preventDefault();
@@ -667,7 +674,6 @@
                     const distance = dragVector.length();
 
                     if (distance > 0.3) {
-                        // Direct forward aiming vector
                         aimDirection.copy(dragVector).normalize();
 
                         const clampedDist = Math.min(distance, maxDragDistance);
@@ -785,8 +791,17 @@
             else matchStats.aiThrows++;
             const spotX = Math.sign(touchX) * (sidelineX - 0.2);
             const spotZ = Math.max(-27, Math.min(27, touchZ));
-            logMatchAction('THROW', `${awardedTeam === 'BLUE' ? 'Blue' : 'Red'} Throw-In`, 'badge-throw', 'THROWS', spotX, spotZ);
-            setupSetPiecePosition('THROW_IN', awardedTeam, spotX, spotZ, `THROW IN!\n${awardedTeam} BALL`);
+            const label = `${awardedTeam === 'BLUE' ? 'Blue' : 'Red'} Throw-In`;
+            const bannerText = `THROW IN!\n${awardedTeam} BALL`;
+
+            logMatchAction('THROW', label, 'badge-throw', 'THROWS', spotX, spotZ);
+            setupSetPiecePosition('THROW_IN', awardedTeam, spotX, spotZ, bannerText);
+
+            socket.emit('set_piece_event', {
+                roomName: currentRoomName,
+                bannerText: bannerText,
+                logAction: { type: 'THROW', label: label, badgeClass: 'badge-throw', category: 'THROWS', spotX: spotX, spotZ: spotZ }
+            });
         }
 
         function awardCornerKick(cornerXSign, cornerZSign, awardedTeam) {
@@ -794,14 +809,30 @@
             else matchStats.aiCorners++;
             const spotX = cornerXSign * (sidelineX - 0.5);
             const spotZ = cornerZSign * (endlineZ - 0.5);
-            logMatchAction('CORNER', `${awardedTeam === 'BLUE' ? 'Blue' : 'Red'} Corner Kick`, 'badge-corner', 'CROSSES', spotX, spotZ);
-            setupSetPiecePosition('CORNER', awardedTeam, spotX, spotZ, `CORNER KICK!\n${awardedTeam} CORNER`);
+            const label = `${awardedTeam === 'BLUE' ? 'Blue' : 'Red'} Corner Kick`;
+            const bannerText = `CORNER KICK!\n${awardedTeam} CORNER`;
+
+            logMatchAction('CORNER', label, 'badge-corner', 'CROSSES', spotX, spotZ);
+            setupSetPiecePosition('CORNER', awardedTeam, spotX, spotZ, bannerText);
+
+            socket.emit('set_piece_event', {
+                roomName: currentRoomName,
+                bannerText: bannerText,
+                logAction: { type: 'CORNER', label: label, badgeClass: 'badge-corner', category: 'CROSSES', spotX: spotX, spotZ: spotZ }
+            });
         }
 
         function awardGoalKick(endZSign, awardedTeam) {
             const spotX = (Math.random() > 0.5 ? 1 : -1) * 3.5;
             const spotZ = endZSign * (endlineZ - 8.0);
-            setupSetPiecePosition('GOAL_KICK', awardedTeam, spotX, spotZ, `GOAL KICK!\n${awardedTeam} KICK`);
+            const bannerText = `GOAL KICK!\n${awardedTeam} KICK`;
+
+            setupSetPiecePosition('GOAL_KICK', awardedTeam, spotX, spotZ, bannerText);
+
+            socket.emit('set_piece_event', {
+                roomName: currentRoomName,
+                bannerText: bannerText
+            });
         }
 
         function executeAerialDelivery(originPos, targetDir, powerPercent) {
@@ -1200,9 +1231,10 @@
                             }
                         });
                     } else {
-                        if (!ball.isAerial) {
-                            ball.mesh.position.lerp(ball.targetPos, 0.45);
-                        }
+                        // Smooth interpolation for both aerial flight and ground rolls
+                        const lerpFactor = ball.isAerial ? 0.7 : 0.45;
+                        ball.mesh.position.lerp(ball.targetPos, lerpFactor);
+                        
                         players.forEach(p => {
                             p.mesh.position.lerp(p.targetPos, 0.45);
                         });
