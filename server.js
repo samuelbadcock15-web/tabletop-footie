@@ -79,6 +79,10 @@ io.on('connection', (socket) => {
     socket.to(payload.roomName).emit('receive_set_piece_event', payload);
   });
 
+  socket.on('log_replay_event', (payload) => {
+    socket.to(payload.roomName).emit('receive_replay_log', payload.record);
+  });
+
   socket.on('disconnect', () => {
     if (waitingPlayer && waitingPlayer.id === socket.id) waitingPlayer = null;
     for (const [roomName, room] of activeRooms.entries()) {
