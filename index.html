@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tabletop Footie - Physical Shared Table</title>
+    <title>Tabletop Footie - Lag Free & Solid Physics</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #080c14; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; }
 
-        /* Matchmaking HUD Overlay */
         #matchmaking-overlay { position: absolute; inset: 0; background: rgba(8, 12, 20, 0.96); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); }
         .queue-box { background: #0f172a; border: 2px solid #00ffcc; border-radius: 24px; padding: 40px 32px; width: 440px; max-width: 90vw; text-align: center; box-shadow: 0 0 40px rgba(0, 255, 204, 0.25); color: #fff; display: flex; flex-direction: column; align-items: center; gap: 16px; }
         .game-title { font-size: 32px; font-weight: 900; color: #00ffcc; letter-spacing: 3px; }
@@ -29,7 +28,6 @@
         #ready-btn:hover { background: #33ffd6; transform: scale(1.02); }
         #ready-btn:disabled { background: #334155; color: #94a3b8; cursor: default; transform: none; box-shadow: none; }
 
-        /* Match HUD */
         #scoreboard { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); background: rgba(10, 15, 20, 0.88); border: 2px solid #00ffcc; border-radius: 28px; padding: 8px 24px; color: #fff; display: flex; align-items: center; gap: 16px; font-weight: bold; font-size: 18px; z-index: 20; box-shadow: 0 4px 15px rgba(0, 255, 204, 0.2); }
         .score-blue { color: #3399ff; }
         .score-red { color: #ff4444; }
@@ -148,12 +146,19 @@
             }, 1000);
         });
 
+        // Network State Sync with Target Interpolation
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted) {
-                ball.mesh.position.set(state.ball.x, state.ball.y, state.ball.z);
+                ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
+                ball.velocity.set(state.ball.vx, state.ball.vy, state.ball.vz);
+                
                 state.players.forEach((p, idx) => {
-                    if (players[idx]) players[idx].mesh.position.set(p.x, p.y, p.z);
+                    if (players[idx]) {
+                        players[idx].targetPos.set(p.x, p.y, p.z);
+                        players[idx].velocity.set(p.vx, 0, p.vz);
+                    }
                 });
+
                 playerScore = state.scores.blue;
                 aiScore = state.scores.red;
                 document.getElementById('player-score').innerText = playerScore;
@@ -206,13 +211,10 @@
 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // True Shared Physical Tabletop Positions
             if (myTeam === 'RED') {
-                // Red sits at the North End looking South
                 camera.position.set(0, 56, -44);
                 camera.lookAt(new THREE.Vector3(0, -2, -2));
             } else {
-                // Blue sits at the South End looking North
                 camera.position.set(0, 56, 44);
                 camera.lookAt(new THREE.Vector3(0, -2, 2));
             }
@@ -280,21 +282,22 @@
             const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.65, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 }));
             mesh.position.set(0, 0.65, 0);
             scene.add(mesh);
-            ball = { mesh: mesh, radius: 0.65, velocity: new THREE.Vector3(0,0,0) };
+            ball = { 
+                mesh: mesh, 
+                radius: 0.65, 
+                velocity: new THREE.Vector3(0,0,0),
+                targetPos: new THREE.Vector3(0, 0.65, 0)
+            };
         }
 
         function createTeams() {
-            // Blue Team Base: South (+Z)
             const posBlue = [
-                {x: 0, z: 26},
-                {x: -10, z: 16}, {x: 10, z: 16},
+                {x: 0, z: 26}, {x: -10, z: 16}, {x: 10, z: 16},
                 {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7},
                 {x: -6, z: 1.5}, {x: 6, z: 1.5}
             ];
-            // Red Team Base: North (-Z)
             const posRed = [
-                {x: 0, z: -26},
-                {x: -10, z: -16}, {x: 10, z: -16},
+                {x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16},
                 {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7},
                 {x: -6, z: -1.5}, {x: 6, z: -1.5}
             ];
@@ -312,7 +315,13 @@
             group.add(base, fig);
             group.position.set(pos.x, 0, pos.z);
             scene.add(group);
-            players.push({ mesh: group, team: team, radius: 1.0, velocity: new THREE.Vector3(0,0,0) });
+            players.push({ 
+                mesh: group, 
+                team: team, 
+                radius: 1.0, 
+                velocity: new THREE.Vector3(0,0,0),
+                targetPos: new THREE.Vector3(pos.x, 0, pos.z)
+            });
         }
 
         function createArrowIndicator() {
@@ -351,14 +360,14 @@
                     const impulse = aimDirection.clone().multiplyScalar((chargePower / 100) * 45.0);
                     const pIndex = players.indexOf(selectedPlayer);
 
-                    if (isAuthoritativeHost) {
-                        selectedPlayer.velocity.copy(impulse);
-                    } else {
-                        socket.emit('player_action', {
-                            roomName: currentRoomName,
-                            action: { playerIndex: pIndex, impulse: { x: impulse.x, z: impulse.z } }
-                        });
-                    }
+                    // Client Prediction: apply immediately on both host and guest
+                    selectedPlayer.velocity.copy(impulse);
+
+                    // Notify opponent/server
+                    socket.emit('player_action', {
+                        roomName: currentRoomName,
+                        action: { playerIndex: pIndex, impulse: { x: impulse.x, z: impulse.z } }
+                    });
                 }
                 selectedPlayer = null;
             }
@@ -397,7 +406,6 @@
             }
         }
 
-        // Relative Pan Controls
         function onKeyDown(e) {
             if (myTeam === 'RED') {
                 if (e.code === 'KeyW' || e.code === 'ArrowUp') moveBackward = true;
@@ -430,6 +438,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // Full Physics with Solid Player-to-Player Collisions
         function updatePhysics(delta) {
             const all = [...players, ball];
             all.forEach(ent => {
@@ -446,9 +455,38 @@
                         ent.mesh.position.z = Math.sign(ent.mesh.position.z) * bZ;
                         ent.velocity.z *= -0.5;
                     }
-                } else ent.velocity.set(0,0,0);
+                } else {
+                    ent.velocity.set(0,0,0);
+                }
             });
 
+            // 1. Player-to-Player Collisions (Prevents Ghosting)
+            for (let i = 0; i < players.length; i++) {
+                for (let j = i + 1; j < players.length; j++) {
+                    const p1 = players[i], p2 = players[j];
+                    const dist = p1.mesh.position.distanceTo(p2.mesh.position);
+                    const minDist = p1.radius + p2.radius;
+                    
+                    if (dist < minDist && dist > 0.0001) {
+                        const norm = new THREE.Vector3().subVectors(p2.mesh.position, p1.mesh.position).setY(0).normalize();
+                        const overlap = (minDist - dist) * 0.5;
+                        p1.mesh.position.addScaledVector(norm, -overlap);
+                        p2.mesh.position.addScaledVector(norm, overlap);
+
+                        const relVel = new THREE.Vector3().subVectors(p1.velocity, p2.velocity);
+                        const speed = relVel.dot(norm);
+                        
+                        if (speed > 0) {
+                            const restitution = 0.4;
+                            const impulse = speed * (1 + restitution) * 0.5;
+                            p1.velocity.addScaledVector(norm, -impulse);
+                            p2.velocity.addScaledVector(norm, impulse);
+                        }
+                    }
+                }
+            }
+
+            // 2. Player-to-Ball Collisions
             players.forEach(p => {
                 const d = p.mesh.position.distanceTo(ball.mesh.position);
                 const minD = p.radius + ball.radius;
@@ -463,7 +501,8 @@
                 }
             });
 
-            if (Math.abs(ball.mesh.position.z) >= endlineZ && Math.abs(ball.mesh.position.x) < goalWidth / 2) {
+            // 3. Goal Checking (Authoritative on Host)
+            if (isAuthoritativeHost && Math.abs(ball.mesh.position.z) >= endlineZ && Math.abs(ball.mesh.position.x) < goalWidth / 2) {
                 if (ball.mesh.position.z < 0) {
                     playerScore++;
                     showBanner("GOAL BLUE!");
@@ -504,16 +543,31 @@
             camera.position.x += cameraVelocity.x * delta;
             camera.position.z += cameraVelocity.z * delta;
 
-            if (isAuthoritativeHost && isGameStarted) {
+            if (isGameStarted) {
+                // Both clients run local physics for responsiveness
                 updatePhysics(delta);
-                socket.emit('sync_state', {
-                    roomName: currentRoomName,
-                    state: {
-                        ball: { x: ball.mesh.position.x, y: ball.mesh.position.y, z: ball.mesh.position.z },
-                        players: players.map(p => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z })),
-                        scores: { blue: playerScore, red: aiScore }
-                    }
-                });
+
+                if (isAuthoritativeHost) {
+                    // Host broadcasts state and velocities
+                    socket.emit('sync_state', {
+                        roomName: currentRoomName,
+                        state: {
+                            ball: { 
+                                x: ball.mesh.position.x, y: ball.mesh.position.y, z: ball.mesh.position.z,
+                                vx: ball.velocity.x, vy: ball.velocity.y, vz: ball.velocity.z
+                            },
+                            players: players.map(p => ({ 
+                                x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z,
+                                vx: p.velocity.x, vz: p.velocity.z
+                            })),
+                            scores: { blue: playerScore, red: aiScore }
+                        }
+                    });
+                } else {
+                    // Guest smoothly reconciles toward host position
+                    ball.mesh.position.lerp(ball.targetPos, 0.25);
+                    players.forEach(p => p.mesh.position.lerp(p.targetPos, 0.25));
+                }
             }
 
             renderer.render(scene, camera);
