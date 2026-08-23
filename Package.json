@@ -1,0 +1,23 @@
+{
+  "name": "tabletop-footie",
+  "version": "1.0.0",
+  "description": "3D Real-Time Subbuteo Tabletop Football with Live Multiplayer Lobby",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "subbuteo",
+    "football",
+    "threejs",
+    "socketio",
+    "multiplayer",
+    "game"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
