@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Smooth Mobile & PC</title>
+    <title>Tabletop Footie - Goalkeeper Rules & Box Lock</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -238,7 +238,6 @@
             }, 1000);
         });
 
-        // Guest Smooth Interpolation
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted && !isReplayMode) {
                 ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
@@ -358,10 +357,14 @@
         let liveStateRestoreSnapshot = null;
         let currentReplayCameraConfig = null;
 
-        const COLOR_BLUE_NORMAL = 0x2563eb;
-        const COLOR_BLUE_ACTIVE = 0x0f2d7a;
-        const COLOR_RED_NORMAL = 0xdc2626;
-        const COLOR_RED_ACTIVE = 0x6b0d0d;
+        // Color Constants
+        const COLOR_BLUE_OUTFIELD = 0x2563eb;
+        const COLOR_BLUE_GK = 0x0f2d7a; // Darker Blue for GK
+        const COLOR_BLUE_ACTIVE = 0x081b4b;
+
+        const COLOR_RED_OUTFIELD = 0xdc2626;
+        const COLOR_RED_GK = 0x6b0d0d; // Darker Red/Burgundy for GK
+        const COLOR_RED_ACTIVE = 0x3d0707;
 
         const camCurrentLook = new THREE.Vector3();
 
@@ -448,6 +451,7 @@
             ctx.beginPath(); ctx.moveTo(40, 768); ctx.lineTo(984, 768); ctx.stroke();
             ctx.beginPath(); ctx.arc(512, 768, 140, 0, Math.PI * 2); ctx.stroke();
             ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(512, 768, 8, 0, Math.PI * 2); ctx.fill();
+            // Penalty Boxes
             ctx.strokeRect(262, 40, 500, 240);
             ctx.strokeRect(262, 1256, 500, 240);
 
@@ -526,14 +530,21 @@
         }
 
         function createTeams() {
-            const posBlue = [{x: 0, z: 26}, {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}];
-            const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
+            // Index 0 of each team is the Goalkeeper
+            const posBlue = [
+                {x: 0, z: 26, isGK: true}, 
+                {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}
+            ];
+            const posRed = [
+                {x: 0, z: -26, isGK: true}, 
+                {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}
+            ];
 
-            posBlue.forEach(p => spawnPlayer(p, 'BLUE', COLOR_BLUE_NORMAL));
-            posRed.forEach(p => spawnPlayer(p, 'RED', COLOR_RED_NORMAL));
+            posBlue.forEach(p => spawnPlayer(p, 'BLUE', p.isGK ? COLOR_BLUE_GK : COLOR_BLUE_OUTFIELD, !!p.isGK));
+            posRed.forEach(p => spawnPlayer(p, 'RED', p.isGK ? COLOR_RED_GK : COLOR_RED_OUTFIELD, !!p.isGK));
         }
 
-        function spawnPlayer(pos, team, baseColor) {
+        function spawnPlayer(pos, team, baseColor, isGK = false) {
             const figure = createSubbuteoFigure(baseColor);
             figure.group.position.set(pos.x, 0, pos.z);
             scene.add(figure.group);
@@ -542,6 +553,7 @@
                 baseMat: figure.baseMat,
                 figureMat: figure.figureMat,
                 team: team,
+                isGK: isGK,
                 radius: 1.0,
                 velocity: new THREE.Vector3(0,0,0),
                 targetPos: new THREE.Vector3(pos.x, 0, pos.z)
@@ -787,12 +799,19 @@
             ball.mesh.position.set(spotX, 0.65, spotZ);
 
             players.forEach(p => p.velocity.set(0,0,0));
-            const eligiblePlayers = players.filter(p => p.team === awardedTeam);
-            let taker = eligiblePlayers[0], minDist = Infinity;
-            eligiblePlayers.forEach(p => {
-                const d = p.mesh.position.distanceTo(ball.mesh.position);
-                if (d < minDist) { minDist = d; taker = p; }
-            });
+            
+            let taker = null;
+            if (type === 'GOAL_KICK') {
+                // Goal Kick is strictly taken by the team's Goalkeeper (index 0 for Blue, index 8 for Red)
+                taker = (awardedTeam === 'BLUE') ? players[0] : players[8];
+            } else {
+                const eligiblePlayers = players.filter(p => p.team === awardedTeam && !p.isGK);
+                let minDist = Infinity;
+                eligiblePlayers.forEach(p => {
+                    const d = p.mesh.position.distanceTo(ball.mesh.position);
+                    if (d < minDist) { minDist = d; taker = p; }
+                });
+            }
 
             setPieceTaker = taker;
             const dirToCenter = new THREE.Vector3(0, 0, 0).sub(ball.mesh.position).setY(0).normalize();
@@ -1041,13 +1060,13 @@
             players.forEach(p => {
                 const isMoving = p.velocity.lengthSq() > 0.04;
                 if (p.team === 'BLUE') {
-                    const isActive = (selectedPlayer === p) || isMoving;
-                    const color = isActive ? COLOR_BLUE_ACTIVE : COLOR_BLUE_NORMAL;
+                    let color = p.isGK ? COLOR_BLUE_GK : COLOR_BLUE_OUTFIELD;
+                    if (selectedPlayer === p || isMoving) color = COLOR_BLUE_ACTIVE;
                     p.baseMat.color.setHex(color);
                     p.figureMat.color.setHex(color);
                 } else {
-                    const isActive = (selectedPlayer === p) || isMoving;
-                    const color = isActive ? COLOR_RED_ACTIVE : COLOR_RED_NORMAL;
+                    let color = p.isGK ? COLOR_RED_GK : COLOR_RED_OUTFIELD;
+                    if (selectedPlayer === p || isMoving) color = COLOR_RED_ACTIVE;
                     p.baseMat.color.setHex(color);
                     p.figureMat.color.setHex(color);
                 }
@@ -1101,7 +1120,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Authoritative Physics Engine (Host executes, Guest extrapolates smoothly)
+        // Authoritative Physics Engine with Goalkeeper Box Constraints & Hand Catching
         function updatePhysics(delta) {
             if (isReplayMode) return;
 
@@ -1128,23 +1147,45 @@
                     if (ent.velocity.lengthSq() > 0.03) {
                         ent.mesh.position.addScaledVector(ent.velocity, delta);
                         ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
-                        const bX = (pitchWidth / 2) - ent.radius;
-                        const bZ = (pitchDepth / 2) - ent.radius;
-                        if (Math.abs(ent.mesh.position.x) > bX) {
-                            ent.mesh.position.x = Math.sign(ent.mesh.position.x) * bX;
-                            ent.velocity.x *= -0.5;
-                        }
-                        if (Math.abs(ent.mesh.position.z) > bZ && Math.abs(ent.mesh.position.x) > goalWidth/2) {
-                            ent.mesh.position.z = Math.sign(ent.mesh.position.z) * bZ;
-                            ent.velocity.z *= -0.5;
+                        
+                        // Strict Goalkeeper Box Constraint (GK cannot leave the box)
+                        if (ent.isGK) {
+                            ent.mesh.position.x = Math.max(-9.5, Math.min(9.5, ent.mesh.position.x));
+                            if (ent.team === 'BLUE') {
+                                ent.mesh.position.z = Math.max(19.0, Math.min(27.5, ent.mesh.position.z));
+                            } else {
+                                ent.mesh.position.z = Math.max(-27.5, Math.min(-19.0, ent.mesh.position.z));
+                            }
+                        } else {
+                            const bX = (pitchWidth / 2) - ent.radius;
+                            const bZ = (pitchDepth / 2) - ent.radius;
+                            if (Math.abs(ent.mesh.position.x) > bX) {
+                                ent.mesh.position.x = Math.sign(ent.mesh.position.x) * bX;
+                                ent.velocity.x *= -0.5;
+                            }
+                            if (Math.abs(ent.mesh.position.z) > bZ && Math.abs(ent.mesh.position.x) > goalWidth/2) {
+                                ent.mesh.position.z = Math.sign(ent.mesh.position.z) * bZ;
+                                ent.velocity.z *= -0.5;
+                            }
                         }
                     } else ent.velocity.set(0,0,0);
                 });
 
-                if (!ball.isAerial) {
+                if (!ball.isAerial && !isSetPieceActive) {
                     players.forEach(p => {
                         const dist = p.mesh.position.distanceTo(ball.mesh.position);
                         const minDist = p.radius + ball.radius;
+
+                        // Goalkeeper Hand Catch Rule: If ball reaches GK in his box, he gathers it for Goal Kick
+                        if (p.isGK && dist < 2.0) {
+                            const isInOwnBox = (p.team === 'BLUE' && ball.mesh.position.z > 18.0 && Math.abs(ball.mesh.position.x) < 10.5) ||
+                                               (p.team === 'RED' && ball.mesh.position.z < -18.0 && Math.abs(ball.mesh.position.x) < 10.5);
+                            if (isInOwnBox) {
+                                awardGoalKick(p.team === 'BLUE' ? 1 : -1, p.team);
+                                return;
+                            }
+                        }
+
                         if (dist < minDist && dist > 0.0001) {
                             lastTouchedTeam = p.team;
                             const norm = new THREE.Vector3().subVectors(ball.mesh.position, p.mesh.position).setY(0).normalize();
@@ -1226,7 +1267,6 @@
                     awardThrowIn(ball.mesh.position.x, ball.mesh.position.z, awardedTeam);
                 }
             } else {
-                // Guest Dead Reckoning + Target Glide
                 const blend = Math.min(1.0, delta * 18.0);
                 ball.mesh.position.lerp(ball.targetPos, blend);
                 players.forEach(p => {
