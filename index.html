@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Dynamic Action Cam</title>
+    <title>Tabletop Footie - Direct Flick Action</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -346,8 +346,6 @@
         const COLOR_RED_NORMAL = 0xdc2626;
         const COLOR_RED_ACTIVE = 0x6b0d0d;
 
-        // Dynamic Smooth Action Cam Tracker
-        const camCurrentPos = new THREE.Vector3();
         const camCurrentLook = new THREE.Vector3();
 
         function updateActionCamera(delta) {
@@ -365,18 +363,15 @@
             let lookTarget = new THREE.Vector3(clampedBallX, 0.5, clampedBallZ);
 
             if (aspect < 1.0) {
-                // Mobile Portrait: Action Cam zooms in closer and tracks smoothly
                 targetY = 44.0;
                 targetZ = (myTeam === 'RED') ? (clampedBallZ - 28.0) : (clampedBallZ + 28.0);
             } else {
-                // Desktop Landscape: Classic elevated pitch view with subtle ball follow
                 targetY = 52.0;
                 targetZ = (myTeam === 'RED') ? (clampedBallZ * 0.3 - 42.0) : (clampedBallZ * 0.3 + 42.0);
             }
 
             const targetPos = new THREE.Vector3(targetX, targetY, targetZ);
             
-            // Smooth Camera Damping (lerp)
             camera.position.lerp(targetPos, Math.min(1.0, delta * 4.5));
             camCurrentLook.lerp(lookTarget, Math.min(1.0, delta * 4.5));
             camera.lookAt(camCurrentLook);
@@ -615,7 +610,7 @@
             );
         }
 
-        // --- Intuitive Mobile Slingshot Aim (Pull-Back or Push-Forward) ---
+        // Direct Push/Flick Mechanics (Drag Forward to Shoot Forward)
         function onPointerDown(event) {
             if (isPlayPaused || isGameOver || isReplayMode || !isGameStarted) return;
             event.preventDefault();
@@ -672,14 +667,8 @@
                     const distance = dragVector.length();
 
                     if (distance > 0.3) {
-                        // Slingshot Detection: If user pulls backward towards self, shoot forward so fingers don't block the screen!
-                        const isPullingBack = (myTeam === 'BLUE' && dragVector.z > 0) || (myTeam === 'RED' && dragVector.z < 0);
-                        
-                        if (isPullingBack) {
-                            aimDirection.copy(dragVector).negate().normalize();
-                        } else {
-                            aimDirection.copy(dragVector).normalize();
-                        }
+                        // Direct forward aiming vector
+                        aimDirection.copy(dragVector).normalize();
 
                         const clampedDist = Math.min(distance, maxDragDistance);
                         chargePower = (clampedDist / maxDragDistance) * 100;
@@ -717,13 +706,7 @@
 
                 if (dragDist > 0.35 && finalPower > 4 && !isGameOver && !isReplayMode) {
                     const pIndex = players.indexOf(selectedPlayer);
-                    
-                    const isPullingBack = (myTeam === 'BLUE' && dragVector.z > 0) || (myTeam === 'RED' && dragVector.z < 0);
-                    if (isPullingBack) {
-                        aimDirection.copy(dragVector).negate().normalize();
-                    } else {
-                        aimDirection.copy(dragVector).normalize();
-                    }
+                    aimDirection.copy(dragVector).normalize();
 
                     if (isSetPieceActive && (selectedPlayer === setPieceTaker || setPieceType === 'GOAL_KICK')) {
                         if (isAuthoritativeHost) {
