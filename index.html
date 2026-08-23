@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Goalkeeper Rules & Box Lock</title>
+    <title>Tabletop Footie - Synchronized Replays</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -256,6 +256,16 @@
                 document.getElementById('player-score').innerText = playerScore;
                 document.getElementById('ai-score').innerText = aiScore;
 
+                // Sync stats from host
+                if (state.stats) {
+                    matchStats.playerShots = state.stats.playerShots;
+                    matchStats.aiShots = state.stats.aiShots;
+                    matchStats.playerCorners = state.stats.playerCorners;
+                    matchStats.aiCorners = state.stats.aiCorners;
+                    matchStats.playerThrows = state.stats.playerThrows;
+                    matchStats.aiThrows = state.stats.aiThrows;
+                }
+
                 isSetPieceActive = state.setPiece.active;
                 setPieceTeam = state.setPiece.team;
                 setPieceType = state.setPiece.type;
@@ -294,8 +304,14 @@
 
         socket.on('receive_set_piece_event', (payload) => {
             showBanner(payload.bannerText, 1300);
-            if (payload.logAction) {
-                logMatchAction(payload.logAction.type, payload.logAction.label, payload.logAction.badgeClass, payload.logAction.category, payload.logAction.spotX, payload.logAction.spotZ);
+        });
+
+        // Sync Replay Log to Guest
+        socket.on('receive_replay_log', (record) => {
+            if (!isAuthoritativeHost && record) {
+                if (categorizedArchive[record.category]) {
+                    categorizedArchive[record.category].push(record);
+                }
             }
         });
 
@@ -357,13 +373,12 @@
         let liveStateRestoreSnapshot = null;
         let currentReplayCameraConfig = null;
 
-        // Color Constants
         const COLOR_BLUE_OUTFIELD = 0x2563eb;
-        const COLOR_BLUE_GK = 0x0f2d7a; // Darker Blue for GK
+        const COLOR_BLUE_GK = 0x0f2d7a;
         const COLOR_BLUE_ACTIVE = 0x081b4b;
 
         const COLOR_RED_OUTFIELD = 0xdc2626;
-        const COLOR_RED_GK = 0x6b0d0d; // Darker Red/Burgundy for GK
+        const COLOR_RED_GK = 0x6b0d0d;
         const COLOR_RED_ACTIVE = 0x3d0707;
 
         const camCurrentLook = new THREE.Vector3();
@@ -451,7 +466,6 @@
             ctx.beginPath(); ctx.moveTo(40, 768); ctx.lineTo(984, 768); ctx.stroke();
             ctx.beginPath(); ctx.arc(512, 768, 140, 0, Math.PI * 2); ctx.stroke();
             ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(512, 768, 8, 0, Math.PI * 2); ctx.fill();
-            // Penalty Boxes
             ctx.strokeRect(262, 40, 500, 240);
             ctx.strokeRect(262, 1256, 500, 240);
 
@@ -530,7 +544,6 @@
         }
 
         function createTeams() {
-            // Index 0 of each team is the Goalkeeper
             const posBlue = [
                 {x: 0, z: 26, isGK: true}, 
                 {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}
@@ -802,7 +815,6 @@
             
             let taker = null;
             if (type === 'GOAL_KICK') {
-                // Goal Kick is strictly taken by the team's Goalkeeper (index 0 for Blue, index 8 for Red)
                 taker = (awardedTeam === 'BLUE') ? players[0] : players[8];
             } else {
                 const eligiblePlayers = players.filter(p => p.team === awardedTeam && !p.isGK);
@@ -851,8 +863,7 @@
 
             socket.emit('set_piece_event', {
                 roomName: currentRoomName,
-                bannerText: bannerText,
-                logAction: { type: 'THROW', label: label, badgeClass: 'badge-throw', category: 'THROWS', spotX: spotX, spotZ: spotZ }
+                bannerText: bannerText
             });
         }
 
@@ -869,8 +880,7 @@
 
             socket.emit('set_piece_event', {
                 roomName: currentRoomName,
-                bannerText: bannerText,
-                logAction: { type: 'CORNER', label: label, badgeClass: 'badge-corner', category: 'CROSSES', spotX: spotX, spotZ: spotZ }
+                bannerText: bannerText
             });
         }
 
@@ -921,12 +931,20 @@
         function logMatchAction(type, label, badgeClass, category, spotX = 0, spotZ = 0) {
             if (rollingBuffer.length < 15) return;
             const record = {
-                type: type, label: label, badgeClass: badgeClass,
+                type: type, label: label, badgeClass: badgeClass, category: category,
                 time: matchClockElem.innerText,
                 clip: JSON.parse(JSON.stringify(rollingBuffer)),
                 spotX: spotX, spotZ: spotZ
             };
             if (category && categorizedArchive[category]) categorizedArchive[category].push(record);
+
+            // Broadcast the replay log frame to the other client (guest)
+            if (isAuthoritativeHost) {
+                socket.emit('log_replay_event', {
+                    roomName: currentRoomName,
+                    record: record
+                });
+            }
         }
 
         function determineReplayCamera(item) {
@@ -1120,7 +1138,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Authoritative Physics Engine with Goalkeeper Box Constraints & Hand Catching
         function updatePhysics(delta) {
             if (isReplayMode) return;
 
@@ -1148,7 +1165,6 @@
                         ent.mesh.position.addScaledVector(ent.velocity, delta);
                         ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
                         
-                        // Strict Goalkeeper Box Constraint (GK cannot leave the box)
                         if (ent.isGK) {
                             ent.mesh.position.x = Math.max(-9.5, Math.min(9.5, ent.mesh.position.x));
                             if (ent.team === 'BLUE') {
@@ -1176,7 +1192,6 @@
                         const dist = p.mesh.position.distanceTo(ball.mesh.position);
                         const minDist = p.radius + ball.radius;
 
-                        // Goalkeeper Hand Catch Rule: If ball reaches GK in his box, he gathers it for Goal Kick
                         if (p.isGK && dist < 2.0) {
                             const isInOwnBox = (p.team === 'BLUE' && ball.mesh.position.z > 18.0 && Math.abs(ball.mesh.position.x) < 10.5) ||
                                                (p.team === 'RED' && ball.mesh.position.z < -18.0 && Math.abs(ball.mesh.position.x) < 10.5);
@@ -1303,6 +1318,7 @@
                                     vx: p.velocity.x, vz: p.velocity.z
                                 })),
                                 scores: { blue: playerScore, red: aiScore },
+                                stats: matchStats,
                                 setPiece: {
                                     active: isSetPieceActive,
                                     team: setPieceTeam,
