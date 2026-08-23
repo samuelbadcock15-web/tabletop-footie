@@ -2,83 +2,64 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
+const io = new Server(server, { cors: { origin: "*" } });
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
+
+// Serve index.html
+app.get('/', (req, res) => {
+  const publicPath = path.join(__dirname, 'public', 'index.html');
+  const rootPath = path.join(__dirname, 'index.html');
+  if (fs.existsSync(publicPath)) {
+    res.sendFile(publicPath);
+  } else if (fs.existsSync(rootPath)) {
+    res.sendFile(rootPath);
+  } else {
+    res.status(404).send("index.html not found.");
+  }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Room & Matchmaking State
+// Matchmaking
 const rooms = new Map();
-
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
 io.on('connection', (socket) => {
-  console.log(`[Socket Connected] ID: ${socket.id}`);
-
-  // Create a new custom room
   socket.on('create_room', () => {
     const roomCode = generateRoomCode();
-    rooms.set(roomCode, {
-      host: socket.id,
-      guest: null,
-      state: 'WAITING'
-    });
-
+    rooms.set(roomCode, { host: socket.id, guest: null });
     socket.join(roomCode);
     socket.emit('room_created', { roomCode, role: 'HOST', team: 'BLUE' });
-    console.log(`[Room Created] Code: ${roomCode} by ${socket.id}`);
   });
 
-  // Join existing room by code
   socket.on('join_room', (roomCode) => {
-    const code = roomCode.trim().toUpperCase();
+    const code = (roomCode || '').trim().toUpperCase();
     const room = rooms.get(code);
-
-    if (!room) {
-      return socket.emit('join_error', 'Match room not found.');
-    }
-    if (room.guest) {
-      return socket.emit('join_error', 'This room is already full.');
-    }
+    if (!room) return socket.emit('join_error', 'Match room not found.');
+    if (room.guest) return socket.emit('join_error', 'This room is full.');
 
     room.guest = socket.id;
-    room.state = 'PLAYING';
     socket.join(code);
-
     socket.emit('room_joined', { roomCode: code, role: 'GUEST', team: 'RED' });
-    io.to(code).emit('match_start', {
-      hostId: room.host,
-      guestId: room.guest,
-      roomCode: code
-    });
-
-    console.log(`[Match Started] Room: ${code} - Host: ${room.host}, Guest: ${socket.id}`);
+    io.to(code).emit('match_start', { hostId: room.host, guestId: room.guest, roomCode: code });
   });
 
-  // Host broadcasts authoritative simulation state to Guest
   socket.on('sync_state', (payload) => {
     socket.to(payload.roomCode).emit('server_state_update', payload.state);
   });
 
-  // Player action/flick input sync
   socket.on('player_action', (payload) => {
     socket.to(payload.roomCode).emit('receive_player_action', payload.action);
   });
 
-  // Match restart / set-piece signals
-  socket.on('game_event', (payload) => {
-    io.to(payload.roomCode).emit('broadcast_game_event', payload);
-  });
-
-  // Handle Disconnection
   socket.on('disconnect', () => {
-    console.log(`[Socket Disconnected] ID: ${socket.id}`);
     for (const [code, room] of rooms.entries()) {
       if (room.host === socket.id || room.guest === socket.id) {
         io.to(code).emit('opponent_disconnected');
@@ -89,7 +70,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Tabletop Footie server running on http://localhost:${PORT}`);
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
