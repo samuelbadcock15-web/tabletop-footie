@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Unified Action Cam</title>
+    <title>Tabletop Footie - Smart Flick & Mid-Flight Redirect</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -280,7 +280,12 @@
             } else {
                 const targetPlayer = players[action.playerIndex];
                 if (targetPlayer) {
-                    targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
+                    if (action.isRedirect) {
+                        // Vector momentum blend
+                        targetPlayer.velocity.multiplyScalar(0.3).add(new THREE.Vector3(action.impulse.x, 0, action.impulse.z));
+                    } else {
+                        targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
+                    }
                 }
             }
         });
@@ -326,6 +331,7 @@
         let impactArrowGroup, arrowShaftMesh, arrowTipMesh;
 
         let touchStartTime = 0;
+        let touchStartGroundPoint = new THREE.Vector3();
         let currentDragPoint = new THREE.Vector3();
 
         let isPlayPaused = false;
@@ -355,7 +361,6 @@
 
         const camCurrentLook = new THREE.Vector3();
 
-        // Unified Close-Up Zoom Action Camera across PC and Mobile
         function updateActionCamera(delta) {
             if (isReplayMode) return;
 
@@ -365,7 +370,6 @@
             const clampedBallZ = Math.max(-20, Math.min(20, ballPos.z));
             const clampedBallX = Math.max(-10, Math.min(10, ballPos.x * 0.6));
 
-            // Unified tight zoom on both PC and mobile
             const targetX = clampedBallX;
             const targetY = 44.0;
             const targetZ = (myTeam === 'RED') ? (clampedBallZ - 28.0) : (clampedBallZ + 28.0);
@@ -604,6 +608,37 @@
             );
         }
 
+        // Smart Intercept: Velocity-Predictive Hitbox Finder
+        function findTargetPlayer(groundPoint) {
+            let bestPlayer = null;
+            let minDist = Infinity;
+
+            players.forEach(p => {
+                if (p.team === myTeam) {
+                    // Normal center distance
+                    const distToPos = p.mesh.position.distanceTo(groundPoint);
+                    
+                    // Predicted forward interception point for moving figures
+                    const speed = p.velocity.length();
+                    let effectiveDist = distToPos;
+
+                    if (speed > 0.5) {
+                        const forwardPoint = p.mesh.position.clone().addScaledVector(p.velocity.clone().normalize(), Math.min(speed * 0.25, 2.5));
+                        const distToPredicted = forwardPoint.distanceTo(groundPoint);
+                        effectiveDist = Math.min(distToPos, distToPredicted);
+                    }
+
+                    // Generous 2.2 unit magnetic radius
+                    if (effectiveDist < 2.2 && effectiveDist < minDist) {
+                        minDist = effectiveDist;
+                        bestPlayer = p;
+                    }
+                }
+            });
+
+            return bestPlayer;
+        }
+
         function onPointerDown(event) {
             if (isPlayPaused || isGameOver || isReplayMode || !isGameStarted) return;
             event.preventDefault();
@@ -611,24 +646,24 @@
             mousePointer.copy(getPointerVector(event));
             raycaster.setFromCamera(mousePointer, camera);
 
-            const hits = raycaster.intersectObjects(players.map(p => p.mesh), true);
-            if (hits.length > 0) {
-                let obj = hits[0].object;
-                while (obj.parent && !players.some(p => p.mesh === obj)) obj = obj.parent;
-                const hitPlayer = players.find(p => p.mesh === obj);
+            const intersects = raycaster.intersectObject(terrainMesh);
+            if (intersects.length > 0) {
+                const groundPt = intersects[0].point;
+                const target = findTargetPlayer(groundPt);
 
-                if (hitPlayer && hitPlayer.team === myTeam) {
+                if (target) {
                     if (isSetPieceActive) {
                         if (setPieceTeam !== myTeam) return;
-                        if (!setPieceTaker) setPieceTaker = hitPlayer;
-                        if (hitPlayer !== setPieceTaker) return;
+                        if (!setPieceTaker) setPieceTaker = target;
+                        if (target !== setPieceTaker) return;
                     }
-                    
-                    selectedPlayer = hitPlayer;
+
+                    selectedPlayer = target;
                     isAiming = true;
                     chargePower = 0;
                     touchStartTime = performance.now();
-                    currentDragPoint.copy(selectedPlayer.mesh.position);
+                    touchStartGroundPoint.copy(groundPt);
+                    currentDragPoint.copy(groundPt);
 
                     powerBarContainer.style.display = 'block';
                     powerBarFill.style.width = '0%';
@@ -643,11 +678,9 @@
             raycaster.setFromCamera(mousePointer, camera);
 
             if (!isAiming) {
-                const hits = raycaster.intersectObjects(players.map(p => p.mesh), true);
-                if (hits.length > 0) {
-                    let obj = hits[0].object;
-                    while (obj.parent && !players.some(p => p.mesh === obj)) obj = obj.parent;
-                    hoveredPlayer = players.find(p => p.mesh === obj) || null;
+                const intersects = raycaster.intersectObject(terrainMesh);
+                if (intersects.length > 0) {
+                    hoveredPlayer = findTargetPlayer(intersects[0].point);
                 } else hoveredPlayer = null;
                 updateCursorStyle();
             } else if (selectedPlayer) {
@@ -656,10 +689,11 @@
                     const pt = intersects[0].point;
                     currentDragPoint.copy(pt);
 
-                    const dragVector = new THREE.Vector3().subVectors(pt, selectedPlayer.mesh.position).setY(0);
+                    // Pure touch delta displacement (Independent of player slide)
+                    const dragVector = new THREE.Vector3().subVectors(pt, touchStartGroundPoint).setY(0);
                     const distance = dragVector.length();
 
-                    if (distance > 0.3) {
+                    if (distance > 0.25) {
                         aimDirection.copy(dragVector).normalize();
 
                         const clampedDist = Math.min(distance, maxDragDistance);
@@ -667,6 +701,7 @@
                         powerBarFill.style.width = chargePower + '%';
 
                         impactArrowGroup.visible = true;
+                        // Anchors directly to current player mesh location
                         impactArrowGroup.position.copy(selectedPlayer.mesh.position).y += (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.3);
                         const lookTarget = selectedPlayer.mesh.position.clone().add(aimDirection).add(new THREE.Vector3(0, (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.3), 0));
                         impactArrowGroup.lookAt(lookTarget);
@@ -688,15 +723,15 @@
                 powerBarContainer.style.display = 'none';
                 impactArrowGroup.visible = false;
 
-                const touchDuration = Math.max(20, performance.now() - touchStartTime) / 1000;
-                const dragVector = new THREE.Vector3().subVectors(currentDragPoint, selectedPlayer.mesh.position).setY(0);
+                const touchDuration = Math.max(15, performance.now() - touchStartTime) / 1000;
+                const dragVector = new THREE.Vector3().subVectors(currentDragPoint, touchStartGroundPoint).setY(0);
                 const dragDist = dragVector.length();
 
                 const flickSpeed = dragDist / touchDuration; 
                 let finalPower = (Math.min(dragDist, maxDragDistance) / maxDragDistance) * 70 + Math.min(30, flickSpeed * 1.2);
                 finalPower = Math.min(100, Math.max(0, finalPower));
 
-                if (dragDist > 0.35 && finalPower > 4 && !isGameOver && !isReplayMode) {
+                if (dragDist > 0.3 && finalPower > 4 && !isGameOver && !isReplayMode) {
                     const pIndex = players.indexOf(selectedPlayer);
                     aimDirection.copy(dragVector).normalize();
 
@@ -711,8 +746,15 @@
                         });
                     } else {
                         const impulse = aimDirection.clone().multiplyScalar((finalPower / 100) * 45.0);
+                        const isMovingRedirect = selectedPlayer.velocity.lengthSq() > 0.5;
+
                         if (isAuthoritativeHost) {
-                            selectedPlayer.velocity.copy(impulse);
+                            if (isMovingRedirect) {
+                                // Momentum Vector Blend on redirect
+                                selectedPlayer.velocity.multiplyScalar(0.3).add(impulse);
+                            } else {
+                                selectedPlayer.velocity.copy(impulse);
+                            }
                         }
                         lastTouchedTeam = myTeam;
                         
@@ -721,7 +763,7 @@
 
                         socket.emit('player_action', {
                             roomName: currentRoomName,
-                            action: { isAerial: false, playerIndex: pIndex, impulse: { x: impulse.x, z: impulse.z } }
+                            action: { isAerial: false, playerIndex: pIndex, impulse: { x: impulse.x, z: impulse.z }, isRedirect: isMovingRedirect }
                         });
                     }
                 }
