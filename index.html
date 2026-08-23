@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Smart Flick & Mid-Flight Redirect</title>
+    <title>Tabletop Footie - Zero Latency Touch Dribbling</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -238,6 +238,7 @@
             }, 1000);
         });
 
+        // Smart Reconciled Network State Sync
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted && !isReplayMode) {
                 ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
@@ -247,7 +248,10 @@
                     const pl = players[idx];
                     if (pl) {
                         pl.targetPos.set(p.x, p.y, p.z);
-                        pl.velocity.set(p.vx, 0, p.vz);
+                        // Only let server set velocity if player is not currently in mid-dribble locally
+                        if (pl.localPredictionTimer <= 0) {
+                            pl.velocity.set(p.vx, 0, p.vz);
+                        }
                     }
                 });
 
@@ -281,8 +285,7 @@
                 const targetPlayer = players[action.playerIndex];
                 if (targetPlayer) {
                     if (action.isRedirect) {
-                        // Vector momentum blend
-                        targetPlayer.velocity.multiplyScalar(0.3).add(new THREE.Vector3(action.impulse.x, 0, action.impulse.z));
+                        targetPlayer.velocity.multiplyScalar(0.2).add(new THREE.Vector3(action.impulse.x, 0, action.impulse.z));
                     } else {
                         targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
                     }
@@ -333,6 +336,7 @@
         let touchStartTime = 0;
         let touchStartGroundPoint = new THREE.Vector3();
         let currentDragPoint = new THREE.Vector3();
+        let activePointerId = null;
 
         let isPlayPaused = false;
         let isSetPieceActive = false;
@@ -423,6 +427,7 @@
 
             window.addEventListener('resize', onWindowResize);
             
+            // Raw low-latency pointer capture
             canvasContainerElem.addEventListener('pointerdown', onPointerDown, { passive: false });
             window.addEventListener('pointermove', onPointerMove, { passive: false });
             window.addEventListener('pointerup', onPointerUp, { passive: false });
@@ -540,7 +545,8 @@
                 team: team,
                 radius: 1.0,
                 velocity: new THREE.Vector3(0,0,0),
-                targetPos: new THREE.Vector3(pos.x, 0, pos.z)
+                targetPos: new THREE.Vector3(pos.x, 0, pos.z),
+                localPredictionTimer: 0.0
             });
         }
 
@@ -608,28 +614,24 @@
             );
         }
 
-        // Smart Intercept: Velocity-Predictive Hitbox Finder
         function findTargetPlayer(groundPoint) {
             let bestPlayer = null;
             let minDist = Infinity;
 
             players.forEach(p => {
                 if (p.team === myTeam) {
-                    // Normal center distance
                     const distToPos = p.mesh.position.distanceTo(groundPoint);
-                    
-                    // Predicted forward interception point for moving figures
                     const speed = p.velocity.length();
                     let effectiveDist = distToPos;
 
-                    if (speed > 0.5) {
-                        const forwardPoint = p.mesh.position.clone().addScaledVector(p.velocity.clone().normalize(), Math.min(speed * 0.25, 2.5));
+                    if (speed > 0.4) {
+                        const forwardPoint = p.mesh.position.clone().addScaledVector(p.velocity.clone().normalize(), Math.min(speed * 0.35, 3.2));
                         const distToPredicted = forwardPoint.distanceTo(groundPoint);
                         effectiveDist = Math.min(distToPos, distToPredicted);
                     }
 
-                    // Generous 2.2 unit magnetic radius
-                    if (effectiveDist < 2.2 && effectiveDist < minDist) {
+                    // Expanded 2.6 unit magnetic radius for touchscreens
+                    if (effectiveDist < 2.6 && effectiveDist < minDist) {
                         minDist = effectiveDist;
                         bestPlayer = p;
                     }
@@ -642,6 +644,9 @@
         function onPointerDown(event) {
             if (isPlayPaused || isGameOver || isReplayMode || !isGameStarted) return;
             event.preventDefault();
+
+            activePointerId = event.pointerId;
+            try { canvasContainerElem.setPointerCapture(event.pointerId); } catch (e) {}
 
             mousePointer.copy(getPointerVector(event));
             raycaster.setFromCamera(mousePointer, camera);
@@ -689,11 +694,10 @@
                     const pt = intersects[0].point;
                     currentDragPoint.copy(pt);
 
-                    // Pure touch delta displacement (Independent of player slide)
                     const dragVector = new THREE.Vector3().subVectors(pt, touchStartGroundPoint).setY(0);
                     const distance = dragVector.length();
 
-                    if (distance > 0.25) {
+                    if (distance > 0.2) {
                         aimDirection.copy(dragVector).normalize();
 
                         const clampedDist = Math.min(distance, maxDragDistance);
@@ -701,7 +705,6 @@
                         powerBarFill.style.width = chargePower + '%';
 
                         impactArrowGroup.visible = true;
-                        // Anchors directly to current player mesh location
                         impactArrowGroup.position.copy(selectedPlayer.mesh.position).y += (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.3);
                         const lookTarget = selectedPlayer.mesh.position.clone().add(aimDirection).add(new THREE.Vector3(0, (isSetPieceActive && setPieceType === 'THROW_IN' ? 1.4 : 0.3), 0));
                         impactArrowGroup.lookAt(lookTarget);
@@ -718,12 +721,17 @@
         }
 
         function onPointerUp(event) {
+            if (activePointerId !== null) {
+                try { canvasContainerElem.releasePointerCapture(activePointerId); } catch (e) {}
+                activePointerId = null;
+            }
+
             if (isAiming && selectedPlayer) {
                 isAiming = false;
                 powerBarContainer.style.display = 'none';
                 impactArrowGroup.visible = false;
 
-                const touchDuration = Math.max(15, performance.now() - touchStartTime) / 1000;
+                const touchDuration = Math.max(10, performance.now() - touchStartTime) / 1000;
                 const dragVector = new THREE.Vector3().subVectors(currentDragPoint, touchStartGroundPoint).setY(0);
                 const dragDist = dragVector.length();
 
@@ -731,14 +739,12 @@
                 let finalPower = (Math.min(dragDist, maxDragDistance) / maxDragDistance) * 70 + Math.min(30, flickSpeed * 1.2);
                 finalPower = Math.min(100, Math.max(0, finalPower));
 
-                if (dragDist > 0.3 && finalPower > 4 && !isGameOver && !isReplayMode) {
+                if (dragDist > 0.25 && finalPower > 4 && !isGameOver && !isReplayMode) {
                     const pIndex = players.indexOf(selectedPlayer);
                     aimDirection.copy(dragVector).normalize();
 
                     if (isSetPieceActive && (selectedPlayer === setPieceTaker || setPieceType === 'GOAL_KICK')) {
-                        if (isAuthoritativeHost) {
-                            executeAerialDelivery(selectedPlayer.mesh.position, aimDirection, finalPower);
-                        }
+                        executeAerialDelivery(selectedPlayer.mesh.position, aimDirection, finalPower);
                         lastTouchedTeam = myTeam;
                         socket.emit('player_action', {
                             roomName: currentRoomName,
@@ -746,16 +752,15 @@
                         });
                     } else {
                         const impulse = aimDirection.clone().multiplyScalar((finalPower / 100) * 45.0);
-                        const isMovingRedirect = selectedPlayer.velocity.lengthSq() > 0.5;
+                        const isMovingRedirect = selectedPlayer.velocity.lengthSq() > 0.4;
 
-                        if (isAuthoritativeHost) {
-                            if (isMovingRedirect) {
-                                // Momentum Vector Blend on redirect
-                                selectedPlayer.velocity.multiplyScalar(0.3).add(impulse);
-                            } else {
-                                selectedPlayer.velocity.copy(impulse);
-                            }
+                        // Immediate local prediction execution (Zero latency on Frame 0)
+                        if (isMovingRedirect) {
+                            selectedPlayer.velocity.multiplyScalar(0.2).add(impulse);
+                        } else {
+                            selectedPlayer.velocity.copy(impulse);
                         }
+                        selectedPlayer.localPredictionTimer = 0.45;
                         lastTouchedTeam = myTeam;
                         
                         if (myTeam === 'BLUE' && aimDirection.z < -0.6) matchStats.playerShots++;
@@ -1084,6 +1089,7 @@
             const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
             players.forEach((p, i) => {
                 p.velocity.set(0,0,0);
+                p.localPredictionTimer = 0.0;
                 const pos = (p.team === 'BLUE') ? posBlue[i] : posRed[i - 8];
                 p.mesh.position.set(pos.x, 0, pos.z);
             });
@@ -1096,6 +1102,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // Shared Authoritative & Predicted Physics Core
         function updatePhysics(delta) {
             if (isReplayMode) return;
             const allEntities = [...players];
@@ -1117,6 +1124,10 @@
             }
 
             allEntities.forEach(ent => {
+                if (ent.localPredictionTimer > 0) {
+                    ent.localPredictionTimer -= delta;
+                }
+
                 if (ent.velocity.lengthSq() > 0.03) {
                     ent.mesh.position.addScaledVector(ent.velocity, delta);
                     ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
@@ -1177,7 +1188,7 @@
                 }
             }
 
-            if (isPlayPaused || ball.isAerial || isGameOver) return;
+            if (!isAuthoritativeHost || isPlayPaused || ball.isAerial || isGameOver) return;
 
             if (Math.abs(ball.mesh.position.z) >= endlineZ) {
                 if (Math.abs(ball.mesh.position.x) < (goalWidth / 2) - 0.2) {
@@ -1227,10 +1238,10 @@
             if (!isReplayMode) {
                 if (isGameStarted) {
                     updateActionCamera(delta);
+                    updatePhysics(delta);
 
                     if (isAuthoritativeHost) {
                         updateMatchTimer(delta);
-                        updatePhysics(delta);
                         recordRollingFrame();
 
                         const takerIdx = setPieceTaker ? players.indexOf(setPieceTaker) : null;
@@ -1261,7 +1272,10 @@
                         ball.mesh.position.lerp(ball.targetPos, lerpFactor);
                         
                         players.forEach(p => {
-                            p.mesh.position.lerp(p.targetPos, 0.45);
+                            // Only blend position if not currently being predicted locally
+                            if (p.localPredictionTimer <= 0) {
+                                p.mesh.position.lerp(p.targetPos, 0.45);
+                            }
                         });
                         recordRollingFrame();
                     }
