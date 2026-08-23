@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Smooth Mobile & PC Multiplayer Subbuteo</title>
+    <title>Tabletop Footie - Mobile & PC</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
 
-        /* Matchmaking HUD Overlay */
         #matchmaking-overlay { position: absolute; inset: 0; background: rgba(8, 12, 20, 0.96); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
         .queue-box { background: #0f172a; border: 2px solid #00ffcc; border-radius: 24px; padding: 32px 24px; width: 420px; max-width: 88vw; text-align: center; box-shadow: 0 0 40px rgba(0, 255, 204, 0.25); color: #fff; display: flex; flex-direction: column; align-items: center; gap: 14px; }
         .game-title { font-size: 28px; font-weight: 900; color: #00ffcc; letter-spacing: 3px; }
@@ -29,28 +28,24 @@
         #ready-btn:hover { background: #33ffd6; transform: scale(1.02); }
         #ready-btn:disabled { background: #334155; color: #94a3b8; cursor: default; transform: none; box-shadow: none; }
 
-        /* Match Scoreboard */
-        #scoreboard { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(10, 15, 20, 0.88); border: 2px solid #00ffcc; border-radius: 28px; padding: 6px 18px; color: #fff; display: flex; align-items: center; gap: 12px; font-weight: bold; font-size: 15px; z-index: 20; box-shadow: 0 4px 15px rgba(0, 255, 204, 0.2); pointer-events: none; }
+        #scoreboard { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(10, 15, 20, 0.88); border: 2px solid #00ffcc; border-radius: 28px; padding: 6px 16px; color: #fff; display: flex; align-items: center; gap: 12px; font-weight: bold; font-size: 14px; z-index: 20; box-shadow: 0 4px 15px rgba(0, 255, 204, 0.2); pointer-events: none; }
         .score-blue { color: #3399ff; }
         .score-red { color: #ff4444; }
-        #match-clock { color: #ffff00; font-family: monospace; font-size: 17px; min-width: 50px; text-align: center; }
-        #match-status-badge { font-size: 11px; font-weight: 800; color: #00ffcc; background: rgba(0, 255, 204, 0.15); border: 1px solid rgba(0, 255, 204, 0.4); padding: 2px 8px; border-radius: 10px; letter-spacing: 1px; white-space: nowrap; }
-        #active-room-tag { position: absolute; top: 14px; right: 14px; color: #00ffcc; background: rgba(15, 23, 42, 0.9); border: 1px solid #00ffcc; padding: 5px 12px; border-radius: 16px; font-size: 11px; font-weight: 900; z-index: 20; pointer-events: none; }
+        #match-clock { color: #ffff00; font-family: monospace; font-size: 16px; min-width: 48px; text-align: center; }
+        #match-status-badge { font-size: 10px; font-weight: 800; color: #00ffcc; background: rgba(0, 255, 204, 0.15); border: 1px solid rgba(0, 255, 204, 0.4); padding: 2px 6px; border-radius: 10px; letter-spacing: 1px; white-space: nowrap; }
+        #active-room-tag { position: absolute; top: 12px; right: 12px; color: #00ffcc; background: rgba(15, 23, 42, 0.9); border: 1px solid #00ffcc; padding: 4px 10px; border-radius: 14px; font-size: 10px; font-weight: 900; z-index: 20; pointer-events: none; }
 
-        /* TV Broadcast Letterbox Bars */
         .tv-bar { position: absolute; left: 0; width: 100%; height: 0; background: #000; z-index: 50; transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none; }
         #tv-bar-top { top: 0; }
         #tv-bar-bottom { bottom: 0; }
-        body.in-replay .tv-bar { height: 40px; }
+        body.in-replay .tv-bar { height: 36px; }
 
-        /* TV Replay HUD */
-        #tv-replay-badge { position: absolute; top: 52px; left: 16px; display: none; align-items: center; gap: 10px; background: rgba(10, 15, 24, 0.92); border: 2px solid #ff3344; padding: 6px 12px; border-radius: 8px; z-index: 60; box-shadow: 0 0 20px rgba(255, 51, 68, 0.45); pointer-events: none; }
+        #tv-replay-badge { position: absolute; top: 48px; left: 14px; display: none; align-items: center; gap: 8px; background: rgba(10, 15, 24, 0.92); border: 2px solid #ff3344; padding: 5px 10px; border-radius: 8px; z-index: 60; box-shadow: 0 0 20px rgba(255, 51, 68, 0.45); pointer-events: none; }
         #tv-rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff3344; box-shadow: 0 0 8px #ff3344; animation: blink 0.7s infinite alternate; }
-        #tv-cam-name { color: #ffffff; font-weight: 900; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; font-family: monospace; }
-        #tv-slomo-tag { color: #ffff00; font-weight: 800; font-size: 9px; letter-spacing: 1px; border-left: 1px solid #475569; padding-left: 8px; }
+        #tv-cam-name { color: #ffffff; font-weight: 900; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; font-family: monospace; }
+        #tv-slomo-tag { color: #ffff00; font-weight: 800; font-size: 8px; letter-spacing: 1px; border-left: 1px solid #475569; padding-left: 6px; }
         @keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
 
-        /* Match Stats & Highlight Vault */
         #vault-modal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 560px; max-width: 90vw; background: rgba(10, 15, 22, 0.96); border: 2px solid #00ffcc; border-radius: 18px; padding: 18px 20px; color: #fff; z-index: 80; display: none; flex-direction: column; gap: 10px; box-shadow: 0 0 40px rgba(0, 255, 204, 0.25); backdrop-filter: blur(12px); }
         #vault-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0, 255, 204, 0.25); padding-bottom: 6px; }
         #vault-title { font-size: 15px; font-weight: 900; color: #00ffcc; letter-spacing: 1px; }
@@ -78,20 +73,18 @@
         .vault-btn { background: #1e293b; border: 1px solid #475569; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; }
         .vault-btn:hover { background: #334155; border-color: #00ffcc; color: #00ffcc; }
 
-        /* Bottom Controls Tray */
-        #bottom-controls { position: absolute; bottom: 18px; left: 18px; display: flex; gap: 10px; z-index: 45; }
-        .hud-circle-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 20, 15, 0.85); border: 2px solid #00ffcc; color: #00ffcc; font-size: 14px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(0,255,204,0.3); }
+        #bottom-controls { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 8px; z-index: 45; }
+        .hud-circle-btn { width: 34px; height: 34px; border-radius: 50%; background: rgba(0, 20, 15, 0.85); border: 2px solid #00ffcc; color: #00ffcc; font-size: 13px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(0,255,204,0.3); }
 
-        #power-bar-container { position: absolute; top: 72%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 12px; background: rgba(0, 0, 0, 0.6); border: 2px solid #ffffff; border-radius: 6px; display: none; z-index: 25; overflow: hidden; pointer-events: none; }
+        #power-bar-container { position: absolute; top: 72%; left: 50%; transform: translate(-50%, -50%); width: 180px; height: 10px; background: rgba(0, 0, 0, 0.6); border: 2px solid #ffffff; border-radius: 6px; display: none; z-index: 25; overflow: hidden; pointer-events: none; }
         #power-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #00ffcc 0%, #ffcc00 60%, #ff3300 100%); }
-        #announcement-banner { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 900; color: #ffff00; text-shadow: 0 0 20px rgba(255,255,0,0.8); z-index: 60; display: none; text-transform: uppercase; text-align: center; pointer-events: none; }
+        #announcement-banner { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 32px; font-weight: 900; color: #ffff00; text-shadow: 0 0 20px rgba(255,255,0,0.8); z-index: 60; display: none; text-transform: uppercase; text-align: center; pointer-events: none; width: 90vw; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
-    <!-- Matchmaking / Ready Overlay -->
     <div id="matchmaking-overlay">
         <div class="queue-box">
             <div class="game-title">TABLETOP FOOTIE</div>
@@ -128,7 +121,6 @@
         <span id="tv-slomo-tag">SLOW-MO 0.5x</span>
     </div>
 
-    <!-- Stats & Highlight Vault Modal -->
     <div id="vault-modal">
         <div id="vault-header">
             <span id="vault-title">MATCH LOG & HIGHLIGHTS</span>
@@ -246,7 +238,6 @@
             }, 1000);
         });
 
-        // Network State Sync with Jitter Lock (Prediction Override)
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted && !isReplayMode) {
                 ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
@@ -256,10 +247,7 @@
                     const pl = players[idx];
                     if (pl) {
                         pl.targetPos.set(p.x, p.y, p.z);
-                        // If this figure was just flicked locally by Red, don't overwrite its velocity/position until cooldown expires
-                        if (pl.localControlCooldown <= 0) {
-                            pl.velocity.set(p.vx, 0, p.vz);
-                        }
+                        pl.velocity.set(p.vx, 0, p.vz);
                     }
                 });
 
@@ -271,6 +259,12 @@
                 isSetPieceActive = state.setPiece.active;
                 setPieceTeam = state.setPiece.team;
                 setPieceType = state.setPiece.type;
+                if (state.setPiece.takerIdx !== null && players[state.setPiece.takerIdx]) {
+                    setPieceTaker = players[state.setPiece.takerIdx];
+                } else {
+                    setPieceTaker = null;
+                }
+
                 if (setPieceExclusionRing) {
                     setPieceExclusionRing.visible = isSetPieceActive;
                     if (isSetPieceActive && state.setPiece.ringPos) {
@@ -287,7 +281,6 @@
                 const targetPlayer = players[action.playerIndex];
                 if (targetPlayer) {
                     targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
-                    targetPlayer.localControlCooldown = 0.4;
                 }
             }
         });
@@ -297,7 +290,6 @@
             window.location.reload();
         });
 
-        // --- 3D Scene & Engine ---
         let scene, camera, renderer;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let prevTime = performance.now();
@@ -330,7 +322,6 @@
         let impactArrowGroup, arrowShaftMesh, arrowTipMesh;
 
         let touchStartTime = 0;
-        let touchStartPos = new THREE.Vector3();
         let currentDragPoint = new THREE.Vector3();
 
         let isPlayPaused = false;
@@ -358,6 +349,36 @@
         const COLOR_RED_NORMAL = 0xdc2626;
         const COLOR_RED_ACTIVE = 0x6b0d0d;
 
+        function updateResponsiveCamera() {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = aspect;
+
+            if (aspect < 1.0) {
+                // Mobile Portrait: Increase altitude and pull back so the entire pitch fits
+                const portraitAltitude = 58 + (1.0 - aspect) * 32;
+                const portraitDistance = 46 + (1.0 - aspect) * 20;
+                camera.fov = 54;
+                if (myTeam === 'RED') {
+                    camera.position.set(0, portraitAltitude, -portraitDistance);
+                    camera.lookAt(new THREE.Vector3(0, -2, -2));
+                } else {
+                    camera.position.set(0, portraitAltitude, portraitDistance);
+                    camera.lookAt(new THREE.Vector3(0, -2, 2));
+                }
+            } else {
+                // Desktop Landscape
+                camera.fov = 42;
+                if (myTeam === 'RED') {
+                    camera.position.set(0, 56, -44);
+                    camera.lookAt(new THREE.Vector3(0, -2, -2));
+                } else {
+                    camera.position.set(0, 56, 44);
+                    camera.lookAt(new THREE.Vector3(0, -2, 2));
+                }
+            }
+            camera.updateProjectionMatrix();
+        }
+
         function initEngine() {
             powerBarContainer = document.getElementById('power-bar-container');
             powerBarFill = document.getElementById('power-bar-fill');
@@ -373,14 +394,7 @@
             scene.background = new THREE.Color(0x0f172a);
 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
-            
-            if (myTeam === 'RED') {
-                camera.position.set(0, 56, -44);
-                camera.lookAt(new THREE.Vector3(0, -2, -2));
-            } else {
-                camera.position.set(0, 56, 44);
-                camera.lookAt(new THREE.Vector3(0, -2, 2));
-            }
+            updateResponsiveCamera();
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -404,7 +418,6 @@
 
             window.addEventListener('resize', onWindowResize);
             
-            // Unified Pointer Events
             canvasContainerElem.addEventListener('pointerdown', onPointerDown, { passive: false });
             window.addEventListener('pointermove', onPointerMove, { passive: false });
             window.addEventListener('pointerup', onPointerUp, { passive: false });
@@ -532,8 +545,7 @@
                 team: team,
                 radius: 1.0,
                 velocity: new THREE.Vector3(0,0,0),
-                targetPos: new THREE.Vector3(pos.x, 0, pos.z),
-                localControlCooldown: 0.0
+                targetPos: new THREE.Vector3(pos.x, 0, pos.z)
             });
         }
 
@@ -581,7 +593,7 @@
             }
             if (hoveredPlayer && hoveredPlayer.team === myTeam) {
                 if (isSetPieceActive) {
-                    if (setPieceTeam === myTeam && hoveredPlayer === setPieceTaker) {
+                    if (setPieceTeam === myTeam && (hoveredPlayer === setPieceTaker || !setPieceTaker)) {
                         canvasContainerElem.style.cursor = 'grab';
                     } else {
                         canvasContainerElem.style.cursor = 'default';
@@ -615,13 +627,17 @@
                 const hitPlayer = players.find(p => p.mesh === obj);
 
                 if (hitPlayer && hitPlayer.team === myTeam) {
-                    if (isSetPieceActive && (setPieceTeam !== myTeam || hitPlayer !== setPieceTaker)) return;
+                    // Fix: If setPieceTaker is not assigned yet (e.g. Goal Kick), assign this player as taker
+                    if (isSetPieceActive) {
+                        if (setPieceTeam !== myTeam) return;
+                        if (!setPieceTaker) setPieceTaker = hitPlayer;
+                        if (hitPlayer !== setPieceTaker) return;
+                    }
                     
                     selectedPlayer = hitPlayer;
                     isAiming = true;
                     chargePower = 0;
                     touchStartTime = performance.now();
-                    touchStartPos.copy(selectedPlayer.mesh.position);
                     currentDragPoint.copy(selectedPlayer.mesh.position);
 
                     powerBarContainer.style.display = 'block';
@@ -693,8 +709,10 @@
                     const pIndex = players.indexOf(selectedPlayer);
                     aimDirection.copy(dragVector).normalize();
 
-                    if (isSetPieceActive && selectedPlayer === setPieceTaker) {
-                        executeAerialDelivery(selectedPlayer.mesh.position, aimDirection, finalPower);
+                    if (isSetPieceActive && (selectedPlayer === setPieceTaker || setPieceType === 'GOAL_KICK')) {
+                        if (isAuthoritativeHost) {
+                            executeAerialDelivery(selectedPlayer.mesh.position, aimDirection, finalPower);
+                        }
                         lastTouchedTeam = myTeam;
                         socket.emit('player_action', {
                             roomName: currentRoomName,
@@ -702,8 +720,9 @@
                         });
                     } else {
                         const impulse = aimDirection.clone().multiplyScalar((finalPower / 100) * 45.0);
-                        selectedPlayer.velocity.copy(impulse);
-                        selectedPlayer.localControlCooldown = 0.45; // Lock local physics for 450ms so network sync doesn't rubberband it
+                        if (isAuthoritativeHost) {
+                            selectedPlayer.velocity.copy(impulse);
+                        }
                         lastTouchedTeam = myTeam;
                         
                         if (myTeam === 'BLUE' && aimDirection.z < -0.6) matchStats.playerShots++;
@@ -720,7 +739,6 @@
             }
         }
 
-        // --- Set Pieces & Buffer Rings ---
         function setupSetPiecePosition(type, awardedTeam, spotX, spotZ, bannerText) {
             isPlayPaused = true;
             isSetPieceActive = true;
@@ -807,7 +825,6 @@
             ball.velocity.copy(targetDir).multiplyScalar((powerPercent / 100) * 8.0);
         }
 
-        // --- Highlights & Replays ---
         function recordRollingFrame() {
             if (isReplayMode) return;
             rollingBuffer.push({
@@ -909,7 +926,6 @@
             }
         }
 
-        // --- Vault UI ---
         function openVaultModal() {
             document.getElementById('vault-score-summary').innerText = `BLUE ${playerScore} - ${aiScore} RED`;
             document.getElementById('stat-p-goals').innerText = playerScore;
@@ -958,7 +974,6 @@
             });
         }
 
-        // --- Visual States & Timer ---
         function updatePlayerVisualStates() {
             players.forEach(p => {
                 const isMoving = p.velocity.lengthSq() > 0.04;
@@ -967,13 +982,13 @@
                     const color = isActive ? COLOR_BLUE_ACTIVE : COLOR_BLUE_NORMAL;
                     p.baseMat.color.setHex(color);
                     p.figureMat.color.setHex(color);
-                    p.ring.visible = (!isPlayPaused && !isGameOver && !isReplayMode && (!isSetPieceActive || (p === setPieceTaker && setPieceTeam === 'BLUE')) && !isMoving);
+                    p.ring.visible = (!isPlayPaused && !isGameOver && !isReplayMode && (!isSetPieceActive || (p === setPieceTaker && setPieceTeam === 'BLUE') || (isSetPieceActive && setPieceTeam === 'BLUE' && !setPieceTaker)) && !isMoving);
                 } else {
                     const isActive = (selectedPlayer === p) || isMoving;
                     const color = isActive ? COLOR_RED_ACTIVE : COLOR_RED_NORMAL;
                     p.baseMat.color.setHex(color);
                     p.figureMat.color.setHex(color);
-                    p.ring.visible = (!isPlayPaused && !isGameOver && !isReplayMode && (!isSetPieceActive || (p === setPieceTaker && setPieceTeam === 'RED')) && !isMoving);
+                    p.ring.visible = (!isPlayPaused && !isGameOver && !isReplayMode && (!isSetPieceActive || (p === setPieceTaker && setPieceTeam === 'RED') || (isSetPieceActive && setPieceTeam === 'RED' && !setPieceTaker)) && !isMoving);
                 }
             });
         }
@@ -1013,14 +1028,12 @@
             const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
             players.forEach((p, i) => {
                 p.velocity.set(0,0,0);
-                p.localControlCooldown = 0;
                 const pos = (p.team === 'BLUE') ? posBlue[i] : posRed[i - 8];
                 p.mesh.position.set(pos.x, 0, pos.z);
             });
             setTimeout(() => { if (!isGameOver) isPlayPaused = false; }, 1200);
         }
 
-        // --- Relative Pan Controls ---
         function onKeyDown(e) {
             if (myTeam === 'RED') {
                 if (e.code === 'KeyW' || e.code === 'ArrowUp') moveBackward = true;
@@ -1048,12 +1061,10 @@
             }
         }
         function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
+            updateResponsiveCamera();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // --- Physics Engine ---
         function updatePhysics(delta) {
             if (isReplayMode) return;
             const allEntities = [...players];
@@ -1075,10 +1086,6 @@
             }
 
             allEntities.forEach(ent => {
-                if (ent.localControlCooldown && ent.localControlCooldown > 0) {
-                    ent.localControlCooldown -= delta;
-                }
-
                 if (ent.velocity.lengthSq() > 0.03) {
                     ent.mesh.position.addScaledVector(ent.velocity, delta);
                     ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
@@ -1095,7 +1102,6 @@
                 } else ent.velocity.set(0,0,0);
             });
 
-            // Player to Ball Collisions
             if (!ball.isAerial) {
                 players.forEach(p => {
                     const dist = p.mesh.position.distanceTo(ball.mesh.position);
@@ -1115,7 +1121,6 @@
                 });
             }
 
-            // Figure to Figure Collisions
             for (let i = 0; i < players.length; i++) {
                 for (let j = i + 1; j < players.length; j++) {
                     const p1 = players[i], p2 = players[j];
@@ -1141,9 +1146,8 @@
                 }
             }
 
-            if (!isAuthoritativeHost || isPlayPaused || ball.isAerial || isGameOver) return;
+            if (isPlayPaused || ball.isAerial || isGameOver) return;
 
-            // Goal Checking
             if (Math.abs(ball.mesh.position.z) >= endlineZ) {
                 if (Math.abs(ball.mesh.position.x) < (goalWidth / 2) - 0.2) {
                     if (ball.mesh.position.z < 0) {
@@ -1184,7 +1188,6 @@
             }
         }
 
-        // --- Animation Loop ---
         function animate() {
             requestAnimationFrame(animate);
             const time = performance.now();
@@ -1202,11 +1205,12 @@
                 camera.position.z += cameraVelocity.z * delta;
 
                 if (isGameStarted) {
-                    updateMatchTimer(delta);
-                    updatePhysics(delta);
-                    recordRollingFrame();
-
                     if (isAuthoritativeHost) {
+                        updateMatchTimer(delta);
+                        updatePhysics(delta);
+                        recordRollingFrame();
+
+                        const takerIdx = setPieceTaker ? players.indexOf(setPieceTaker) : null;
                         socket.emit('sync_state', {
                             roomName: currentRoomName,
                             state: {
@@ -1224,18 +1228,19 @@
                                     active: isSetPieceActive,
                                     team: setPieceTeam,
                                     type: setPieceType,
+                                    takerIdx: takerIdx,
                                     ringPos: setPieceExclusionRing ? { x: setPieceExclusionRing.position.x, z: setPieceExclusionRing.position.z } : null
                                 }
                             }
                         });
                     } else {
-                        // Smoothly lerp ball and non-locally flicked figures
-                        if (!ball.isAerial) ball.mesh.position.lerp(ball.targetPos, 0.3);
+                        if (!ball.isAerial) {
+                            ball.mesh.position.lerp(ball.targetPos, 0.45);
+                        }
                         players.forEach(p => {
-                            if (p.localControlCooldown <= 0) {
-                                p.mesh.position.lerp(p.targetPos, 0.3);
-                            }
+                            p.mesh.position.lerp(p.targetPos, 0.45);
                         });
+                        recordRollingFrame();
                     }
                 }
             } else {
