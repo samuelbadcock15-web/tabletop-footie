@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Zero Latency Touch Dribbling</title>
+    <title>Tabletop Footie - Smooth Mobile & PC</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -238,7 +238,7 @@
             }, 1000);
         });
 
-        // Smart Reconciled Network State Sync
+        // Guest Smooth Interpolation
         socket.on('server_state_update', (state) => {
             if (!isAuthoritativeHost && isGameStarted && !isReplayMode) {
                 ball.targetPos.set(state.ball.x, state.ball.y, state.ball.z);
@@ -248,10 +248,7 @@
                     const pl = players[idx];
                     if (pl) {
                         pl.targetPos.set(p.x, p.y, p.z);
-                        // Only let server set velocity if player is not currently in mid-dribble locally
-                        if (pl.localPredictionTimer <= 0) {
-                            pl.velocity.set(p.vx, 0, p.vz);
-                        }
+                        pl.velocity.set(p.vx, 0, p.vz);
                     }
                 });
 
@@ -279,15 +276,18 @@
         });
 
         socket.on('receive_player_action', (action) => {
-            if (action.isAerial) {
-                executeAerialDelivery(new THREE.Vector3(action.origin.x, action.origin.y, action.origin.z), new THREE.Vector3(action.dir.x, action.dir.y, action.dir.z), action.power);
-            } else {
-                const targetPlayer = players[action.playerIndex];
-                if (targetPlayer) {
-                    if (action.isRedirect) {
-                        targetPlayer.velocity.multiplyScalar(0.2).add(new THREE.Vector3(action.impulse.x, 0, action.impulse.z));
-                    } else {
-                        targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
+            if (isAuthoritativeHost) {
+                if (action.isAerial) {
+                    executeAerialDelivery(new THREE.Vector3(action.origin.x, action.origin.y, action.origin.z), new THREE.Vector3(action.dir.x, action.dir.y, action.dir.z), action.power);
+                } else {
+                    const targetPlayer = players[action.playerIndex];
+                    if (targetPlayer) {
+                        const impulseVec = new THREE.Vector3(action.impulse.x, 0, action.impulse.z);
+                        if (action.isRedirect) {
+                            targetPlayer.velocity.multiplyScalar(0.25).add(impulseVec);
+                        } else {
+                            targetPlayer.velocity.copy(impulseVec);
+                        }
                     }
                 }
             }
@@ -427,7 +427,6 @@
 
             window.addEventListener('resize', onWindowResize);
             
-            // Raw low-latency pointer capture
             canvasContainerElem.addEventListener('pointerdown', onPointerDown, { passive: false });
             window.addEventListener('pointermove', onPointerMove, { passive: false });
             window.addEventListener('pointerup', onPointerUp, { passive: false });
@@ -545,8 +544,7 @@
                 team: team,
                 radius: 1.0,
                 velocity: new THREE.Vector3(0,0,0),
-                targetPos: new THREE.Vector3(pos.x, 0, pos.z),
-                localPredictionTimer: 0.0
+                targetPos: new THREE.Vector3(pos.x, 0, pos.z)
             });
         }
 
@@ -630,7 +628,6 @@
                         effectiveDist = Math.min(distToPos, distToPredicted);
                     }
 
-                    // Expanded 2.6 unit magnetic radius for touchscreens
                     if (effectiveDist < 2.6 && effectiveDist < minDist) {
                         minDist = effectiveDist;
                         bestPlayer = p;
@@ -744,7 +741,9 @@
                     aimDirection.copy(dragVector).normalize();
 
                     if (isSetPieceActive && (selectedPlayer === setPieceTaker || setPieceType === 'GOAL_KICK')) {
-                        executeAerialDelivery(selectedPlayer.mesh.position, aimDirection, finalPower);
+                        if (isAuthoritativeHost) {
+                            executeAerialDelivery(selectedPlayer.mesh.position, aimDirection, finalPower);
+                        }
                         lastTouchedTeam = myTeam;
                         socket.emit('player_action', {
                             roomName: currentRoomName,
@@ -754,13 +753,14 @@
                         const impulse = aimDirection.clone().multiplyScalar((finalPower / 100) * 45.0);
                         const isMovingRedirect = selectedPlayer.velocity.lengthSq() > 0.4;
 
-                        // Immediate local prediction execution (Zero latency on Frame 0)
-                        if (isMovingRedirect) {
-                            selectedPlayer.velocity.multiplyScalar(0.2).add(impulse);
-                        } else {
-                            selectedPlayer.velocity.copy(impulse);
+                        if (isAuthoritativeHost) {
+                            if (isMovingRedirect) {
+                                selectedPlayer.velocity.multiplyScalar(0.25).add(impulse);
+                            } else {
+                                selectedPlayer.velocity.copy(impulse);
+                            }
                         }
-                        selectedPlayer.localPredictionTimer = 0.45;
+
                         lastTouchedTeam = myTeam;
                         
                         if (myTeam === 'BLUE' && aimDirection.z < -0.6) matchStats.playerShots++;
@@ -1089,7 +1089,6 @@
             const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
             players.forEach((p, i) => {
                 p.velocity.set(0,0,0);
-                p.localPredictionTimer = 0.0;
                 const pos = (p.team === 'BLUE') ? posBlue[i] : posRed[i - 8];
                 p.mesh.position.set(pos.x, 0, pos.z);
             });
@@ -1102,131 +1101,137 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Shared Authoritative & Predicted Physics Core
+        // Authoritative Physics Engine (Host executes, Guest extrapolates smoothly)
         function updatePhysics(delta) {
             if (isReplayMode) return;
-            const allEntities = [...players];
 
-            if (ball.isAerial) {
-                ball.flightProgress += delta / ball.flightDuration;
-                const t = ball.flightProgress;
-                if (t >= 1.0) {
-                    ball.isAerial = false;
-                    ball.mesh.position.copy(ball.flightEnd);
+            if (isAuthoritativeHost) {
+                const allEntities = [...players];
+
+                if (ball.isAerial) {
+                    ball.flightProgress += delta / ball.flightDuration;
+                    const t = ball.flightProgress;
+                    if (t >= 1.0) {
+                        ball.isAerial = false;
+                        ball.mesh.position.copy(ball.flightEnd);
+                    } else {
+                        const currentX = THREE.MathUtils.lerp(ball.flightStart.x, ball.flightEnd.x, t);
+                        const currentZ = THREE.MathUtils.lerp(ball.flightStart.z, ball.flightEnd.z, t);
+                        const arcY = Math.sin(t * Math.PI) * ball.peakHeight;
+                        ball.mesh.position.set(currentX, 0.65 + arcY, currentZ);
+                    }
                 } else {
-                    const currentX = THREE.MathUtils.lerp(ball.flightStart.x, ball.flightEnd.x, t);
-                    const currentZ = THREE.MathUtils.lerp(ball.flightStart.z, ball.flightEnd.z, t);
-                    const arcY = Math.sin(t * Math.PI) * ball.peakHeight;
-                    ball.mesh.position.set(currentX, 0.65 + arcY, currentZ);
+                    allEntities.push(ball);
+                }
+
+                allEntities.forEach(ent => {
+                    if (ent.velocity.lengthSq() > 0.03) {
+                        ent.mesh.position.addScaledVector(ent.velocity, delta);
+                        ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
+                        const bX = (pitchWidth / 2) - ent.radius;
+                        const bZ = (pitchDepth / 2) - ent.radius;
+                        if (Math.abs(ent.mesh.position.x) > bX) {
+                            ent.mesh.position.x = Math.sign(ent.mesh.position.x) * bX;
+                            ent.velocity.x *= -0.5;
+                        }
+                        if (Math.abs(ent.mesh.position.z) > bZ && Math.abs(ent.mesh.position.x) > goalWidth/2) {
+                            ent.mesh.position.z = Math.sign(ent.mesh.position.z) * bZ;
+                            ent.velocity.z *= -0.5;
+                        }
+                    } else ent.velocity.set(0,0,0);
+                });
+
+                if (!ball.isAerial) {
+                    players.forEach(p => {
+                        const dist = p.mesh.position.distanceTo(ball.mesh.position);
+                        const minDist = p.radius + ball.radius;
+                        if (dist < minDist && dist > 0.0001) {
+                            lastTouchedTeam = p.team;
+                            const norm = new THREE.Vector3().subVectors(ball.mesh.position, p.mesh.position).setY(0).normalize();
+                            const overlap = minDist - dist;
+                            ball.mesh.position.addScaledVector(norm, overlap);
+                            const relVel = new THREE.Vector3().subVectors(p.velocity, ball.velocity);
+                            const speed = relVel.dot(norm);
+                            if (speed > 0) {
+                                ball.velocity.addScaledVector(norm, speed * 1.55);
+                                p.velocity.addScaledVector(norm, -speed * 0.4);
+                            }
+                        }
+                    });
+                }
+
+                for (let i = 0; i < players.length; i++) {
+                    for (let j = i + 1; j < players.length; j++) {
+                        const p1 = players[i], p2 = players[j];
+                        const dist = p1.mesh.position.distanceTo(p2.mesh.position);
+                        const minDist = p1.radius + p2.radius;
+                        if (dist < minDist && dist > 0.0001) {
+                            const norm = new THREE.Vector3().subVectors(p2.mesh.position, p1.mesh.position).setY(0).normalize();
+                            const overlap = (minDist - dist) * 0.5;
+                            p1.mesh.position.addScaledVector(norm, -overlap);
+                            p2.mesh.position.addScaledVector(norm, overlap);
+
+                            const relVel = new THREE.Vector3().subVectors(p1.velocity, p2.velocity);
+                            const speed = relVel.dot(norm);
+                            if (speed > 0) {
+                                const restitution = 0.05;
+                                const impulse = speed * (1 + restitution) * 0.5;
+                                p1.velocity.addScaledVector(norm, -impulse);
+                                p2.velocity.addScaledVector(norm, impulse * 0.4);
+                                p1.velocity.multiplyScalar(0.85);
+                                p2.velocity.multiplyScalar(0.85);
+                            }
+                        }
+                    }
+                }
+
+                if (isPlayPaused || ball.isAerial || isGameOver) return;
+
+                if (Math.abs(ball.mesh.position.z) >= endlineZ) {
+                    if (Math.abs(ball.mesh.position.x) < (goalWidth / 2) - 0.2) {
+                        if (ball.mesh.position.z < 0) {
+                            playerScore++;
+                            document.getElementById('player-score').innerText = playerScore;
+                            logMatchAction('GOAL', 'Goal to Blue!', 'badge-goal', 'MY_GOALS', ball.mesh.position.x, ball.mesh.position.z);
+                            showBanner("GOAL BLUE!");
+                            resetPitchAfterGoal();
+                            return;
+                        } else {
+                            aiScore++;
+                            document.getElementById('ai-score').innerText = aiScore;
+                            logMatchAction('GOAL', 'Goal to Red!', 'badge-goal', 'AI_GOALS', ball.mesh.position.x, ball.mesh.position.z);
+                            showBanner("GOAL RED!");
+                            resetPitchAfterGoal();
+                            return;
+                        }
+                    }
+
+                    if (!isSetPieceActive) {
+                        const isNorthEnd = (ball.mesh.position.z < 0);
+                        const cornerXSign = Math.sign(ball.mesh.position.x) || 1;
+                        const cornerZSign = Math.sign(ball.mesh.position.z) || 1;
+                        if (isNorthEnd) {
+                            if (lastTouchedTeam === 'RED') awardCornerKick(cornerXSign, cornerZSign, 'BLUE');
+                            else awardGoalKick(-1, 'RED');
+                        } else {
+                            if (lastTouchedTeam === 'BLUE') awardCornerKick(cornerXSign, cornerZSign, 'RED');
+                            else awardGoalKick(1, 'BLUE');
+                        }
+                        return;
+                    }
+                }
+
+                if (Math.abs(ball.mesh.position.x) >= sidelineX && !isSetPieceActive) {
+                    const awardedTeam = (lastTouchedTeam === 'BLUE') ? 'RED' : 'BLUE';
+                    awardThrowIn(ball.mesh.position.x, ball.mesh.position.z, awardedTeam);
                 }
             } else {
-                allEntities.push(ball);
-            }
-
-            allEntities.forEach(ent => {
-                if (ent.localPredictionTimer > 0) {
-                    ent.localPredictionTimer -= delta;
-                }
-
-                if (ent.velocity.lengthSq() > 0.03) {
-                    ent.mesh.position.addScaledVector(ent.velocity, delta);
-                    ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
-                    const bX = (pitchWidth / 2) - ent.radius;
-                    const bZ = (pitchDepth / 2) - ent.radius;
-                    if (Math.abs(ent.mesh.position.x) > bX) {
-                        ent.mesh.position.x = Math.sign(ent.mesh.position.x) * bX;
-                        ent.velocity.x *= -0.5;
-                    }
-                    if (Math.abs(ent.mesh.position.z) > bZ && Math.abs(ent.mesh.position.x) > goalWidth/2) {
-                        ent.mesh.position.z = Math.sign(ent.mesh.position.z) * bZ;
-                        ent.velocity.z *= -0.5;
-                    }
-                } else ent.velocity.set(0,0,0);
-            });
-
-            if (!ball.isAerial) {
+                // Guest Dead Reckoning + Target Glide
+                const blend = Math.min(1.0, delta * 18.0);
+                ball.mesh.position.lerp(ball.targetPos, blend);
                 players.forEach(p => {
-                    const dist = p.mesh.position.distanceTo(ball.mesh.position);
-                    const minDist = p.radius + ball.radius;
-                    if (dist < minDist && dist > 0.0001) {
-                        lastTouchedTeam = p.team;
-                        const norm = new THREE.Vector3().subVectors(ball.mesh.position, p.mesh.position).setY(0).normalize();
-                        const overlap = minDist - dist;
-                        ball.mesh.position.addScaledVector(norm, overlap);
-                        const relVel = new THREE.Vector3().subVectors(p.velocity, ball.velocity);
-                        const speed = relVel.dot(norm);
-                        if (speed > 0) {
-                            ball.velocity.addScaledVector(norm, speed * 1.55);
-                            p.velocity.addScaledVector(norm, -speed * 0.4);
-                        }
-                    }
+                    p.mesh.position.lerp(p.targetPos, blend);
                 });
-            }
-
-            for (let i = 0; i < players.length; i++) {
-                for (let j = i + 1; j < players.length; j++) {
-                    const p1 = players[i], p2 = players[j];
-                    const dist = p1.mesh.position.distanceTo(p2.mesh.position);
-                    const minDist = p1.radius + p2.radius;
-                    if (dist < minDist && dist > 0.0001) {
-                        const norm = new THREE.Vector3().subVectors(p2.mesh.position, p1.mesh.position).setY(0).normalize();
-                        const overlap = (minDist - dist) * 0.5;
-                        p1.mesh.position.addScaledVector(norm, -overlap);
-                        p2.mesh.position.addScaledVector(norm, overlap);
-
-                        const relVel = new THREE.Vector3().subVectors(p1.velocity, p2.velocity);
-                        const speed = relVel.dot(norm);
-                        if (speed > 0) {
-                            const restitution = 0.05;
-                            const impulse = speed * (1 + restitution) * 0.5;
-                            p1.velocity.addScaledVector(norm, -impulse);
-                            p2.velocity.addScaledVector(norm, impulse * 0.4);
-                            p1.velocity.multiplyScalar(0.85);
-                            p2.velocity.multiplyScalar(0.85);
-                        }
-                    }
-                }
-            }
-
-            if (!isAuthoritativeHost || isPlayPaused || ball.isAerial || isGameOver) return;
-
-            if (Math.abs(ball.mesh.position.z) >= endlineZ) {
-                if (Math.abs(ball.mesh.position.x) < (goalWidth / 2) - 0.2) {
-                    if (ball.mesh.position.z < 0) {
-                        playerScore++;
-                        document.getElementById('player-score').innerText = playerScore;
-                        logMatchAction('GOAL', 'Goal to Blue!', 'badge-goal', 'MY_GOALS', ball.mesh.position.x, ball.mesh.position.z);
-                        showBanner("GOAL BLUE!");
-                        resetPitchAfterGoal();
-                        return;
-                    } else {
-                        aiScore++;
-                        document.getElementById('ai-score').innerText = aiScore;
-                        logMatchAction('GOAL', 'Goal to Red!', 'badge-goal', 'AI_GOALS', ball.mesh.position.x, ball.mesh.position.z);
-                        showBanner("GOAL RED!");
-                        resetPitchAfterGoal();
-                        return;
-                    }
-                }
-
-                if (!isSetPieceActive) {
-                    const isNorthEnd = (ball.mesh.position.z < 0);
-                    const cornerXSign = Math.sign(ball.mesh.position.x) || 1;
-                    const cornerZSign = Math.sign(ball.mesh.position.z) || 1;
-                    if (isNorthEnd) {
-                        if (lastTouchedTeam === 'RED') awardCornerKick(cornerXSign, cornerZSign, 'BLUE');
-                        else awardGoalKick(-1, 'RED');
-                    } else {
-                        if (lastTouchedTeam === 'BLUE') awardCornerKick(cornerXSign, cornerZSign, 'RED');
-                        else awardGoalKick(1, 'BLUE');
-                    }
-                    return;
-                }
-            }
-
-            if (Math.abs(ball.mesh.position.x) >= sidelineX && !isSetPieceActive) {
-                const awardedTeam = (lastTouchedTeam === 'BLUE') ? 'RED' : 'BLUE';
-                awardThrowIn(ball.mesh.position.x, ball.mesh.position.z, awardedTeam);
             }
         }
 
@@ -1268,15 +1273,6 @@
                             }
                         });
                     } else {
-                        const lerpFactor = ball.isAerial ? 0.7 : 0.45;
-                        ball.mesh.position.lerp(ball.targetPos, lerpFactor);
-                        
-                        players.forEach(p => {
-                            // Only blend position if not currently being predicted locally
-                            if (p.localPredictionTimer <= 0) {
-                                p.mesh.position.lerp(p.targetPos, 0.45);
-                            }
-                        });
                         recordRollingFrame();
                     }
                 }
