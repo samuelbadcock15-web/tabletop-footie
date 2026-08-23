@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tabletop Footie - Instant Response</title>
+    <title>Tabletop Footie - Unified Action Cam</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #0d1117; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; cursor: default; touch-action: none; }
@@ -355,27 +355,21 @@
 
         const camCurrentLook = new THREE.Vector3();
 
+        // Unified Close-Up Zoom Action Camera across PC and Mobile
         function updateActionCamera(delta) {
             if (isReplayMode) return;
 
-            const aspect = window.innerWidth / window.innerHeight;
-            camera.aspect = aspect;
+            camera.aspect = window.innerWidth / window.innerHeight;
 
             const ballPos = ball ? ball.mesh.position : new THREE.Vector3(0, 0, 0);
             const clampedBallZ = Math.max(-20, Math.min(20, ballPos.z));
             const clampedBallX = Math.max(-10, Math.min(10, ballPos.x * 0.6));
 
-            let targetX = clampedBallX;
-            let targetY, targetZ;
-            let lookTarget = new THREE.Vector3(clampedBallX, 0.5, clampedBallZ);
-
-            if (aspect < 1.0) {
-                targetY = 44.0;
-                targetZ = (myTeam === 'RED') ? (clampedBallZ - 28.0) : (clampedBallZ + 28.0);
-            } else {
-                targetY = 52.0;
-                targetZ = (myTeam === 'RED') ? (clampedBallZ * 0.3 - 42.0) : (clampedBallZ * 0.3 + 42.0);
-            }
+            // Unified tight zoom on both PC and mobile
+            const targetX = clampedBallX;
+            const targetY = 44.0;
+            const targetZ = (myTeam === 'RED') ? (clampedBallZ - 28.0) : (clampedBallZ + 28.0);
+            const lookTarget = new THREE.Vector3(clampedBallX, 0.5, clampedBallZ);
 
             const targetPos = new THREE.Vector3(targetX, targetY, targetZ);
             
@@ -400,7 +394,7 @@
             scene.background = new THREE.Color(0x0f172a);
 
             camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 48, myTeam === 'RED' ? -34 : 34);
+            camera.position.set(0, 44, myTeam === 'RED' ? -28 : 28);
             camCurrentLook.set(0, 0, 0);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
