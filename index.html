@@ -1,506 +1,78 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tabletop Footie - 3D Multiplayer Subbuteo</title>
-    <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #090d16; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
-        #canvas-container { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; }
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+const fs = require('fs');
 
-        /* Lobby Overlay */
-        #lobby-overlay { position: absolute; inset: 0; background: rgba(9, 13, 22, 0.95); z-index: 100; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
-        .lobby-card { background: #111827; border: 2px solid #00ffcc; border-radius: 20px; padding: 32px; width: 420px; max-width: 90vw; text-align: center; box-shadow: 0 0 35px rgba(0, 255, 204, 0.25); color: #fff; }
-        .lobby-title { font-size: 28px; font-weight: 900; color: #00ffcc; letter-spacing: 2px; margin-bottom: 6px; }
-        .lobby-sub { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
-        .lobby-btn { width: 100%; padding: 14px; margin: 8px 0; border-radius: 10px; font-size: 15px; font-weight: 800; border: none; cursor: pointer; transition: all 0.2s; }
-        .btn-create { background: #00ffcc; color: #000; }
-        .btn-create:hover { background: #33ffd6; transform: scale(1.02); }
-        .btn-solo { background: #3b82f6; color: #fff; }
-        .btn-solo:hover { background: #60a5fa; transform: scale(1.02); }
-        .join-box { display: flex; gap: 8px; margin-top: 14px; }
-        .join-input { flex: 1; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #fff; text-transform: uppercase; font-size: 15px; font-weight: bold; text-align: center; }
-        .join-input:focus { outline: none; border-color: #00ffcc; }
-        .btn-join { width: 110px; background: #10b981; color: #fff; }
-        .btn-join:hover { background: #34d399; }
-        #waiting-status { display: none; margin-top: 18px; padding: 14px; background: rgba(0, 255, 204, 0.1); border: 1px dashed #00ffcc; border-radius: 10px; font-size: 14px; }
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
-        /* HUD */
-        #scoreboard { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); background: rgba(10, 15, 20, 0.88); border: 2px solid #00ffcc; border-radius: 28px; padding: 8px 24px; color: #fff; display: flex; align-items: center; gap: 16px; font-weight: bold; font-size: 18px; z-index: 20; box-shadow: 0 4px 15px rgba(0, 255, 204, 0.2); }
-        .score-blue { color: #3399ff; }
-        .score-red { color: #ff4444; }
-        #match-clock { color: #ffff00; font-family: monospace; font-size: 20px; min-width: 60px; text-align: center; }
-        #room-tag { position: absolute; top: 22px; right: 24px; color: #00ffcc; background: rgba(15, 23, 42, 0.9); border: 1px solid #00ffcc; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 800; z-index: 20; }
+// Serve static assets from public folder and root
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
-        /* Broadcast Replay HUD */
-        .tv-bar { position: absolute; left: 0; width: 100%; height: 0; background: #000; z-index: 50; transition: height 0.35s; pointer-events: none; }
-        #tv-bar-top { top: 0; }
-        #tv-bar-bottom { bottom: 0; }
-        body.in-replay .tv-bar { height: 48px; }
-        #tv-replay-badge { position: absolute; top: 62px; left: 24px; display: none; align-items: center; gap: 12px; background: rgba(10, 15, 24, 0.92); border: 2px solid #ff3344; padding: 7px 16px; border-radius: 8px; z-index: 60; }
-        #tv-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3344; animation: blink 0.7s infinite alternate; }
-        #tv-cam-name { color: #ffffff; font-weight: 900; font-size: 12px; font-family: monospace; }
-        @keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
+// Explicit fallback route for the root page
+app.get('/', (req, res) => {
+  const publicIndex = path.join(__dirname, 'public', 'index.html');
+  const rootIndex = path.join(__dirname, 'index.html');
 
-        #power-bar-container { position: absolute; top: 70%; left: 50%; transform: translate(-50%, -50%); width: 220px; height: 14px; background: rgba(0, 0, 0, 0.6); border: 2px solid #ffffff; border-radius: 6px; display: none; z-index: 25; overflow: hidden; }
-        #power-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #00ffcc 0%, #ffcc00 60%, #ff3300 100%); }
-        #announcement-banner { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); font-size: 40px; font-weight: 900; color: #ffff00; text-shadow: 0 0 20px rgba(255,255,0,0.8); z-index: 60; display: none; text-transform: uppercase; text-align: center; }
-    </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
-</head>
-<body>
+  if (fs.existsSync(publicIndex)) {
+    res.sendFile(publicIndex);
+  } else if (fs.existsSync(rootIndex)) {
+    res.sendFile(rootIndex);
+  } else {
+    res.status(404).send("index.html not found in repository.");
+  }
+});
 
-    <!-- Lobby Modal -->
-    <div id="lobby-overlay">
-        <div class="lobby-card">
-            <div class="lobby-title">TABLETOP FOOTIE</div>
-            <div class="lobby-sub">3D Real-Time Subbuteo Simulator</div>
-            
-            <button class="lobby-btn btn-create" onclick="hostOnlineMatch()">CREATE ONLINE ROOM</button>
-            
-            <div class="join-box">
-                <input type="text" id="room-code-input" class="join-input" placeholder="ROOM CODE" maxlength="5">
-                <button class="lobby-btn btn-join" onclick="joinOnlineMatch()">JOIN</button>
-            </div>
+// Matchmaking and Room State
+const rooms = new Map();
 
-            <button class="lobby-btn btn-solo" onclick="startSoloMatch()">PLAY VS AI (SOLO)</button>
+function generateRoomCode() {
+  return Math.random().toString(36).substring(2, 7).toUpperCase();
+}
 
-            <div id="waiting-status">
-                Room Created! Code: <strong id="display-code" style="color: #00ffcc; font-size: 18px;"></strong><br>
-                <span style="color: #94a3b8; font-size: 12px;">Share this code with your friend to connect...</span>
-            </div>
-        </div>
-    </div>
+io.on('connection', (socket) => {
+  socket.on('create_room', () => {
+    const roomCode = generateRoomCode();
+    rooms.set(roomCode, { host: socket.id, guest: null });
+    socket.join(roomCode);
+    socket.emit('room_created', { roomCode, role: 'HOST', team: 'BLUE' });
+  });
 
-    <div id="room-tag">MODE: SOLO</div>
-    <div id="tv-bar-top" class="tv-bar"></div>
-    <div id="tv-bar-bottom" class="tv-bar"></div>
-    <div id="canvas-container"></div>
-    
-    <div id="scoreboard">
-        <span class="score-blue">BLUE: <span id="player-score">0</span></span>
-        <span style="color: #777;">|</span>
-        <span id="match-clock">90:00</span>
-        <span style="color: #777;">|</span>
-        <span class="score-red">RED: <span id="ai-score">0</span></span>
-    </div>
+  socket.on('join_room', (roomCode) => {
+    const code = roomCode.trim().toUpperCase();
+    const room = rooms.get(code);
+    if (!room) return socket.emit('join_error', 'Room not found.');
+    if (room.guest) return socket.emit('join_error', 'Room is full.');
 
-    <div id="tv-replay-badge">
-        <div id="tv-rec-dot"></div>
-        <span id="tv-cam-name">BEHIND-THE-NET CAM</span>
-    </div>
+    room.guest = socket.id;
+    socket.join(code);
+    socket.emit('room_joined', { roomCode: code, role: 'GUEST', team: 'RED' });
+    io.to(code).emit('match_start', { hostId: room.host, guestId: room.guest, roomCode: code });
+  });
 
-    <div id="power-bar-container"><div id="power-bar-fill"></div></div>
-    <div id="announcement-banner">KICK OFF!</div>
+  socket.on('sync_state', (payload) => {
+    socket.to(payload.roomCode).emit('server_state_update', payload.state);
+  });
 
-    <script>
-        let socket = null;
-        let isOnline = false;
-        let currentRoomCode = null;
-        let myTeam = 'BLUE'; // 'BLUE' or 'RED'
-        let isAuthoritativeHost = true;
+  socket.on('player_action', (payload) => {
+    socket.to(payload.roomCode).emit('receive_player_action', payload.action);
+  });
 
-        let scene, camera, renderer;
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-        let prevTime = performance.now();
-        const cameraVelocity = new THREE.Vector3();
-        const cameraDirection = new THREE.Vector3();
-        const mousePointer = new THREE.Vector2(-10, -10);
-        const raycaster = new THREE.Raycaster();
+  socket.on('disconnect', () => {
+    for (const [code, room] of rooms.entries()) {
+      if (room.host === socket.id || room.guest === socket.id) {
+        io.to(code).emit('opponent_disconnected');
+        rooms.delete(code);
+        break;
+      }
+    }
+  });
+});
 
-        const pitchWidth = 40, pitchDepth = 60;
-        const sidelineX = 18.5, endlineZ = 28.5;
-        const goalWidth = 10, goalHeight = 3.5;
-        let terrainMesh, ball = null;
-        const players = [];
-
-        let playerScore = 0, aiScore = 0;
-        let powerBarContainer, powerBarFill, banner, matchClockElem;
-        let selectedPlayer = null, hoveredPlayer = null, isAiming = false;
-        let chargePower = 0;
-        const maxDragDistance = 14.0;
-        let aimDirection = new THREE.Vector3();
-        let impactArrowGroup, arrowShaftMesh, arrowTipMesh;
-
-        let isPlayPaused = false;
-        let remainingRealTime = 540.0;
-        let isGameOver = false;
-
-        const COLOR_BLUE = 0x2563eb;
-        const COLOR_RED = 0xdc2626;
-
-        function connectSocket() {
-            if (!socket) {
-                socket = io();
-                setupSocketListeners();
-            }
-        }
-
-        function hostOnlineMatch() {
-            connectSocket();
-            socket.emit('create_room');
-        }
-
-        function joinOnlineMatch() {
-            const code = document.getElementById('room-code-input').value.trim();
-            if (code.length < 3) return alert("Please enter a valid room code.");
-            connectSocket();
-            socket.emit('join_room', code);
-        }
-
-        function startSoloMatch() {
-            isOnline = false;
-            myTeam = 'BLUE';
-            isAuthoritativeHost = true;
-            document.getElementById('lobby-overlay').style.display = 'none';
-            document.getElementById('room-tag').innerText = 'MODE: SOLO VS AI';
-            initEngine();
-        }
-
-        function setupSocketListeners() {
-            socket.on('room_created', (data) => {
-                currentRoomCode = data.roomCode;
-                myTeam = 'BLUE';
-                isAuthoritativeHost = true;
-                document.getElementById('waiting-status').style.display = 'block';
-                document.getElementById('display-code').innerText = currentRoomCode;
-            });
-
-            socket.on('room_joined', (data) => {
-                currentRoomCode = data.roomCode;
-                myTeam = 'RED';
-                isAuthoritativeHost = false;
-            });
-
-            socket.on('match_start', (data) => {
-                isOnline = true;
-                document.getElementById('lobby-overlay').style.display = 'none';
-                document.getElementById('room-tag').innerText = `ROOM: ${data.roomCode} (${myTeam})`;
-                initEngine();
-                showBanner("MATCH READY! KICK OFF");
-            });
-
-            socket.on('server_state_update', (state) => {
-                if (!isAuthoritativeHost) {
-                    ball.mesh.position.set(state.ball.x, state.ball.y, state.ball.z);
-                    state.players.forEach((p, idx) => {
-                        if (players[idx]) players[idx].mesh.position.set(p.x, p.y, p.z);
-                    });
-                    playerScore = state.scores.blue;
-                    aiScore = state.scores.red;
-                    document.getElementById('player-score').innerText = playerScore;
-                    document.getElementById('ai-score').innerText = aiScore;
-                }
-            });
-
-            socket.on('receive_player_action', (action) => {
-                const targetPlayer = players[action.playerIndex];
-                if (targetPlayer) {
-                    targetPlayer.velocity.set(action.impulse.x, 0, action.impulse.z);
-                }
-            });
-
-            socket.on('join_error', (msg) => alert(msg));
-            socket.on('opponent_disconnected', () => {
-                alert("Opponent disconnected.");
-                window.location.reload();
-            });
-        }
-
-        function initEngine() {
-            if (scene) return;
-            powerBarContainer = document.getElementById('power-bar-container');
-            powerBarFill = document.getElementById('power-bar-fill');
-            banner = document.getElementById('announcement-banner');
-            matchClockElem = document.getElementById('match-clock');
-
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0f1d);
-
-            camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 56, 44);
-            camera.lookAt(new THREE.Vector3(0, -2, 2));
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-            const spotLight = new THREE.DirectionalLight(0xffffff, 0.85);
-            spotLight.position.set(20, 60, 20);
-            spotLight.castShadow = true;
-            scene.add(spotLight);
-
-            createPitch();
-            createGoals();
-            createBall();
-            createTeams();
-            createArrowIndicator();
-
-            window.addEventListener('resize', onWindowResize);
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mousedown', onMouseDown);
-            document.addEventListener('mouseup', onMouseUp);
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-
-            animate();
-        }
-
-        function createPitch() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 1024; canvas.height = 1536;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1e7b34'; ctx.fillRect(0, 0, 1024, 1536);
-            ctx.fillStyle = '#238c3c';
-            for (let i = 0; i < 1536; i += 128) ctx.fillRect(0, i, 1024, 64);
-            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 10;
-            ctx.strokeRect(40, 40, 944, 1456);
-            ctx.beginPath(); ctx.moveTo(40, 768); ctx.lineTo(984, 768); ctx.stroke();
-            ctx.beginPath(); ctx.arc(512, 768, 140, 0, Math.PI * 2); ctx.stroke();
-
-            const pitchTexture = new THREE.CanvasTexture(canvas);
-            terrainMesh = new THREE.Mesh(new THREE.PlaneGeometry(pitchWidth, pitchDepth).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: pitchTexture, roughness: 0.85 }));
-            scene.add(terrainMesh);
-        }
-
-        function createGoals() {
-            const frameMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
-            [-1, 1].forEach(side => {
-                const goalGroup = new THREE.Group();
-                const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, goalHeight), frameMat);
-                postL.position.set(-goalWidth/2, goalHeight/2, 0);
-                const postR = postL.clone(); postR.position.x = goalWidth/2;
-                const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, goalWidth).rotateZ(Math.PI/2), frameMat);
-                crossbar.position.set(0, goalHeight, 0);
-                goalGroup.add(postL, postR, crossbar);
-                goalGroup.position.set(0, 0, side * (pitchDepth/2));
-                scene.add(goalGroup);
-            });
-        }
-
-        function createBall() {
-            const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.65, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 }));
-            mesh.position.set(0, 0.65, 0);
-            scene.add(mesh);
-            ball = { mesh: mesh, radius: 0.65, velocity: new THREE.Vector3(0,0,0) };
-        }
-
-        function createTeams() {
-            const posBlue = [{x: 0, z: 26}, {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}];
-            const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
-
-            posBlue.forEach(p => spawnPlayer(p, 'BLUE', COLOR_BLUE));
-            posRed.forEach(p => spawnPlayer(p, 'RED', COLOR_RED));
-        }
-
-        function spawnPlayer(pos, team, color) {
-            const group = new THREE.Group();
-            const base = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.8, 0.35, 24), new THREE.MeshStandardMaterial({ color: color }));
-            base.position.y = 0.175;
-            const fig = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.4, 0.08), new THREE.MeshStandardMaterial({ color: color }));
-            fig.position.y = 1.0;
-            group.add(base, fig);
-            group.position.set(pos.x, 0, pos.z);
-            scene.add(group);
-            players.push({ mesh: group, team: team, radius: 1.0, velocity: new THREE.Vector3(0,0,0) });
-        }
-
-        function createArrowIndicator() {
-            impactArrowGroup = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: 0x00ffcc });
-            arrowShaftMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.0, 12).rotateX(Math.PI/2), mat);
-            arrowTipMesh = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.9, 12).rotateX(Math.PI/2), mat);
-            impactArrowGroup.add(arrowShaftMesh, arrowTipMesh);
-            impactArrowGroup.visible = false;
-            scene.add(impactArrowGroup);
-        }
-
-        function showBanner(text) {
-            banner.innerText = text;
-            banner.style.display = 'block';
-            setTimeout(() => { banner.style.display = 'none'; }, 1500);
-        }
-
-        function onMouseDown(event) {
-            if (event.button !== 0 || isPlayPaused) return;
-            if (hoveredPlayer && hoveredPlayer.team === myTeam) {
-                selectedPlayer = hoveredPlayer;
-                isAiming = true;
-                chargePower = 0;
-                powerBarContainer.style.display = 'block';
-            }
-        }
-
-        function onMouseUp() {
-            if (isAiming && selectedPlayer) {
-                isAiming = false;
-                powerBarContainer.style.display = 'none';
-                impactArrowGroup.visible = false;
-
-                if (chargePower > 3) {
-                    const impulse = aimDirection.clone().multiplyScalar((chargePower / 100) * 45.0);
-                    const pIndex = players.indexOf(selectedPlayer);
-
-                    if (isAuthoritativeHost) {
-                        selectedPlayer.velocity.copy(impulse);
-                    } else {
-                        socket.emit('player_action', {
-                            roomCode: currentRoomCode,
-                            action: { playerIndex: pIndex, impulse: { x: impulse.x, z: impulse.z } }
-                        });
-                    }
-                }
-                selectedPlayer = null;
-            }
-        }
-
-        function onMouseMove(event) {
-            mousePointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mousePointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(mousePointer, camera);
-
-            if (!isAiming) {
-                const hits = raycaster.intersectObjects(players.map(p => p.mesh), true);
-                if (hits.length > 0) {
-                    let obj = hits[0].object;
-                    while (obj.parent && !players.some(p => p.mesh === obj)) obj = obj.parent;
-                    hoveredPlayer = players.find(p => p.mesh === obj) || null;
-                } else hoveredPlayer = null;
-            } else if (selectedPlayer) {
-                const intersects = raycaster.intersectObject(terrainMesh);
-                if (intersects.length > 0) {
-                    const dragVector = new THREE.Vector3().subVectors(intersects[0].point, selectedPlayer.mesh.position).setY(0);
-                    const dist = dragVector.length();
-                    if (dist > 0.4) {
-                        aimDirection.copy(dragVector).normalize();
-                        chargePower = (Math.min(dist, maxDragDistance) / maxDragDistance) * 100;
-                        powerBarFill.style.width = chargePower + '%';
-                        impactArrowGroup.visible = true;
-                        impactArrowGroup.position.copy(selectedPlayer.mesh.position).y += 0.25;
-                        impactArrowGroup.lookAt(selectedPlayer.mesh.position.clone().add(aimDirection).setY(0.25));
-                        const shaftLen = Math.max(0.1, dist * 0.9 - 0.9);
-                        arrowShaftMesh.scale.set(1, shaftLen, 1);
-                        arrowShaftMesh.position.set(0, 0, shaftLen / 2);
-                        arrowTipMesh.position.set(0, 0, shaftLen + 0.45);
-                    }
-                }
-            }
-        }
-
-        function onKeyDown(e) {
-            if (e.code === 'KeyW') moveForward = true;
-            if (e.code === 'KeyS') moveBackward = true;
-            if (e.code === 'KeyD') moveLeft = true;
-            if (e.code === 'KeyA') moveRight = true;
-        }
-        function onKeyUp(e) {
-            if (e.code === 'KeyW') moveForward = false;
-            if (e.code === 'KeyS') moveBackward = false;
-            if (e.code === 'KeyD') moveLeft = false;
-            if (e.code === 'KeyA') moveRight = false;
-        }
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function updatePhysics(delta) {
-            const all = [...players, ball];
-            all.forEach(ent => {
-                if (ent.velocity.lengthSq() > 0.03) {
-                    ent.mesh.position.addScaledVector(ent.velocity, delta);
-                    ent.velocity.multiplyScalar(Math.exp(-2.6 * delta));
-                    const bX = (pitchWidth / 2) - ent.radius;
-                    const bZ = (pitchDepth / 2) - ent.radius;
-                    if (Math.abs(ent.mesh.position.x) > bX) {
-                        ent.mesh.position.x = Math.sign(ent.mesh.position.x) * bX;
-                        ent.velocity.x *= -0.5;
-                    }
-                    if (Math.abs(ent.mesh.position.z) > bZ && Math.abs(ent.mesh.position.x) > goalWidth/2) {
-                        ent.mesh.position.z = Math.sign(ent.mesh.position.z) * bZ;
-                        ent.velocity.z *= -0.5;
-                    }
-                } else ent.velocity.set(0,0,0);
-            });
-
-            // Player to Ball Collisions
-            players.forEach(p => {
-                const d = p.mesh.position.distanceTo(ball.mesh.position);
-                const minD = p.radius + ball.radius;
-                if (d < minD && d > 0.001) {
-                    const norm = new THREE.Vector3().subVectors(ball.mesh.position, p.mesh.position).setY(0).normalize();
-                    ball.mesh.position.addScaledVector(norm, minD - d);
-                    const speed = new THREE.Vector3().subVectors(p.velocity, ball.velocity).dot(norm);
-                    if (speed > 0) {
-                        ball.velocity.addScaledVector(norm, speed * 1.55);
-                        p.velocity.addScaledVector(norm, -speed * 0.4);
-                    }
-                }
-            });
-
-            // Goal detection
-            if (Math.abs(ball.mesh.position.z) >= endlineZ && Math.abs(ball.mesh.position.x) < goalWidth / 2) {
-                if (ball.mesh.position.z < 0) {
-                    playerScore++;
-                    showBanner("GOAL BLUE!");
-                } else {
-                    aiScore++;
-                    showBanner("GOAL RED!");
-                }
-                document.getElementById('player-score').innerText = playerScore;
-                document.getElementById('ai-score').innerText = aiScore;
-                resetPitch();
-            }
-        }
-
-        function resetPitch() {
-            ball.velocity.set(0,0,0);
-            ball.mesh.position.set(0, 0.65, 0);
-            const posBlue = [{x: 0, z: 26}, {x: -10, z: 16}, {x: 10, z: 16}, {x: -12, z: 7}, {x: 0, z: 8}, {x: 12, z: 7}, {x: -6, z: 1.5}, {x: 6, z: 1.5}];
-            const posRed = [{x: 0, z: -26}, {x: -10, z: -16}, {x: 10, z: -16}, {x: -12, z: -7}, {x: 0, z: -8}, {x: 12, z: -7}, {x: -6, z: -1.5}, {x: 6, z: -1.5}];
-            players.forEach((p, i) => {
-                p.velocity.set(0,0,0);
-                const pos = (p.team === 'BLUE') ? posBlue[i] : posRed[i - 8];
-                p.mesh.position.set(pos.x, 0, pos.z);
-            });
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            const time = performance.now();
-            const delta = Math.min((time - prevTime) / 1000, 0.1);
-
-            cameraVelocity.x -= cameraVelocity.x * 10.0 * delta;
-            cameraVelocity.z -= cameraVelocity.z * 10.0 * delta;
-            cameraDirection.z = Number(moveForward) - Number(moveBackward);
-            cameraDirection.x = Number(moveRight) - Number(moveLeft);
-            cameraDirection.normalize();
-            if (moveForward || moveBackward) cameraVelocity.z -= cameraDirection.z * 120.0 * delta;
-            if (moveLeft || moveRight) cameraVelocity.x -= cameraDirection.x * 120.0 * delta;
-            camera.position.x += cameraVelocity.x * delta;
-            camera.position.z += cameraVelocity.z * delta;
-
-            if (isAuthoritativeHost) {
-                updatePhysics(delta);
-                if (isOnline && socket) {
-                    socket.emit('sync_state', {
-                        roomCode: currentRoomCode,
-                        state: {
-                            ball: { x: ball.mesh.position.x, y: ball.mesh.position.y, z: ball.mesh.position.z },
-                            players: players.map(p => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z })),
-                            scores: { blue: playerScore, red: aiScore }
-                        }
-                    });
-                }
-            }
-
-            renderer.render(scene, camera);
-            prevTime = time;
-        }
-    </script>
-</body>
-</html>
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
